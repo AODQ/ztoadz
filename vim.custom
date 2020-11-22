@@ -1,0 +1,11 @@
+function! MakeprgRelease()
+  let &makeprg = 'zig build'
+  make
+endfunction
+
+function! MakeprgReleaseDispatch()
+  let &makeprg = 'zig build'
+  Make
+endfunction
+
+let g:zig_fmt_autosave = 0
