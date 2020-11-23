@@ -2,19 +2,41 @@ const std = @import("std");
 const assert = std.debug.assert;
 const c = @import("c.zig");
 
+fn AssertVk(result : c.VkResult) !void {
+  switch (result) {
+    c.VK_SUCCESS => {},
+    else => return error.Unexpected,
+  }
+}
+
 fn InitializeVulkan(
   allocator : * std.mem.Allocator
 , window : * c.GLFWwindow
 ) !void {
   const appInfo = c.VkApplicationInfo {
-    .sType = c.VK_STRUCTURE_TYPE_APPLICATION_INFO,
-    .pApplicationName = "zTOADz",
-    .applicationVersion = c.VK_MAKE_VERSION(1, 0, 0),
-    .pEngineName = "nil",
-    .engineVersion = c.VK_MAKE_VERSION(1, 0, 0),
-    .apiVersion = c.VK_API_VERSION_1_0,
-    .pNext = null
+    .sType = c.VK_STRUCTURE_TYPE_APPLICATION_INFO
+  , .pApplicationName = "zTOADz"
+  , .applicationVersion = c.VK_MAKE_VERSION(1, 0, 0)
+  , .pEngineName = "nil"
+  , .engineVersion = c.VK_MAKE_VERSION(1, 0, 0)
+  , .apiVersion = c.VK_API_VERSION_1_0
+  , .pNext = null
   };
+
+  var instance : c.VkInstance = null;
+
+  const instanceCreateInfo = c.VkInstanceCreateInfo {
+    .sType = c.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO
+  , .flags = 0
+  , .pApplicationInfo = &appInfo
+  , .enabledLayerCount = 0
+  , .ppEnabledLayerNames = null
+  , .enabledExtensionCount = 0
+  , .ppEnabledExtensionNames = null
+  , .pNext = null
+  };
+
+  try AssertVk(c.vkCreateInstance(&instanceCreateInfo, null, &instance));
 }
 
 pub fn main() !void {
