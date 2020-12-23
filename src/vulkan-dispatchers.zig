@@ -1,0 +1,83 @@
+const vk = @import("vulkan.zig");
+
+pub const VulkanBaseDispatch = struct {
+  vkCreateInstance: vk.PfnCreateInstance,
+
+  usingnamespace vk.BaseWrapper(@This());
+};
+
+pub const VulkanInstanceDispatch = struct {
+  vkCreateDevice : vk.PfnCreateDevice,
+  vkDestroyInstance : vk.PfnDestroyInstance,
+  vkDestroySurfaceKHR : vk.PfnDestroySurfaceKHR,
+  vkEnumerateDeviceExtensionProperties : vk.PfnEnumerateDeviceExtensionProperties,
+  vkEnumeratePhysicalDevices : vk.PfnEnumeratePhysicalDevices,
+  vkGetDeviceProcAddr : vk.PfnGetDeviceProcAddr,
+  vkGetPhysicalDeviceMemoryProperties : vk.PfnGetPhysicalDeviceMemoryProperties,
+  vkGetPhysicalDeviceMemoryProperties2 : vk.PfnGetPhysicalDeviceMemoryProperties2,
+  vkGetPhysicalDeviceProperties : vk.PfnGetPhysicalDeviceProperties,
+  vkGetPhysicalDeviceProperties2 : vk.PfnGetPhysicalDeviceProperties2,
+  vkGetPhysicalDeviceQueueFamilyProperties : vk.PfnGetPhysicalDeviceQueueFamilyProperties,
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR : vk.PfnGetPhysicalDeviceSurfaceCapabilitiesKHR,
+  vkGetPhysicalDeviceSurfaceFormatsKHR : vk.PfnGetPhysicalDeviceSurfaceFormatsKHR,
+  vkGetPhysicalDeviceSurfacePresentModesKHR : vk.PfnGetPhysicalDeviceSurfacePresentModesKHR,
+  vkGetPhysicalDeviceSurfaceSupportKHR : vk.PfnGetPhysicalDeviceSurfaceSupportKHR,
+  usingnamespace vk.InstanceWrapper(@This());
+};
+
+pub const VulkanDeviceDispatch = struct {
+  vkAcquireNextImageKHR: vk.PfnAcquireNextImageKHR,
+  vkGetBufferMemoryRequirements2 : vk.PfnGetBufferMemoryRequirements2,
+  vkDestroySampler : vk.PfnDestroySampler,
+  vkAllocateCommandBuffers: vk.PfnAllocateCommandBuffers,
+  vkAllocateMemory: vk.PfnAllocateMemory,
+  vkBeginCommandBuffer: vk.PfnBeginCommandBuffer,
+  vkBindBufferMemory: vk.PfnBindBufferMemory,
+  vkCmdBeginRenderPass: vk.PfnCmdBeginRenderPass,
+  vkCmdBindPipeline: vk.PfnCmdBindPipeline,
+  vkCmdBindVertexBuffers: vk.PfnCmdBindVertexBuffers,
+  vkCmdCopyBuffer: vk.PfnCmdCopyBuffer,
+  vkCmdDraw: vk.PfnCmdDraw,
+  vkCmdEndRenderPass: vk.PfnCmdEndRenderPass,
+  vkCmdSetScissor: vk.PfnCmdSetScissor,
+  vkCmdSetViewport: vk.PfnCmdSetViewport,
+  vkCreateBuffer: vk.PfnCreateBuffer,
+  vkCreateCommandPool: vk.PfnCreateCommandPool,
+  vkCreateFence: vk.PfnCreateFence,
+  vkCreateFramebuffer: vk.PfnCreateFramebuffer,
+  vkCreateGraphicsPipelines: vk.PfnCreateGraphicsPipelines,
+  vkCreateImageView: vk.PfnCreateImageView,
+  vkCreatePipelineLayout: vk.PfnCreatePipelineLayout,
+  vkCreateRenderPass: vk.PfnCreateRenderPass,
+  vkCreateSemaphore: vk.PfnCreateSemaphore,
+  vkCreateShaderModule: vk.PfnCreateShaderModule,
+  vkCreateSwapchainKHR: vk.PfnCreateSwapchainKHR,
+  vkDestroyBuffer: vk.PfnDestroyBuffer,
+  vkDestroyCommandPool: vk.PfnDestroyCommandPool,
+  vkDestroyDevice: vk.PfnDestroyDevice,
+  vkDestroyFence: vk.PfnDestroyFence,
+  vkDestroyFramebuffer: vk.PfnDestroyFramebuffer,
+  vkDestroyImageView: vk.PfnDestroyImageView,
+  vkDestroyPipelineLayout: vk.PfnDestroyPipelineLayout,
+  vkDestroyPipeline: vk.PfnDestroyPipeline,
+  vkDestroyRenderPass: vk.PfnDestroyRenderPass,
+  vkDestroySemaphore: vk.PfnDestroySemaphore,
+  vkDestroyShaderModule: vk.PfnDestroyShaderModule,
+  vkDestroySwapchainKHR: vk.PfnDestroySwapchainKHR,
+  vkDeviceWaitIdle: vk.PfnDeviceWaitIdle,
+  vkEndCommandBuffer: vk.PfnEndCommandBuffer,
+  vkFreeCommandBuffers: vk.PfnFreeCommandBuffers,
+  vkFreeMemory: vk.PfnFreeMemory,
+  vkGetBufferMemoryRequirements: vk.PfnGetBufferMemoryRequirements,
+  vkGetDeviceQueue: vk.PfnGetDeviceQueue,
+  vkGetSwapchainImagesKHR: vk.PfnGetSwapchainImagesKHR,
+  vkMapMemory: vk.PfnMapMemory,
+  vkQueuePresentKHR: vk.PfnQueuePresentKHR,
+  vkQueueSubmit: vk.PfnQueueSubmit,
+  vkQueueWaitIdle: vk.PfnQueueWaitIdle,
+  vkResetFences: vk.PfnResetFences,
+  vkUnmapMemory: vk.PfnUnmapMemory,
+  vkWaitForFences: vk.PfnWaitForFences,
+  usingnamespace vk.DeviceWrapper(@This());
+};
+

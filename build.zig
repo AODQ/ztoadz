@@ -10,8 +10,6 @@ pub fn build(builder: * Builder) !void {
   exe.linkSystemLibrary("vulkan");
   exe.linkSystemLibrary("c");
 
-  exe.addPackagePath("glfw", "./deps/glfw/glfw.zig");
-
   builder.default_step.dependOn(&exe.step);
   exe.install();
 
