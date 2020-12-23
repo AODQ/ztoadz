@@ -17,6 +17,7 @@ pub const VulkanDeviceQueues = struct {
   graphicsIdx : u32 = 0,
   presentIdx : u32 = 0,
   transferIdx : u32 = 0,
+  gtcIdx : u32 = 0,
 };
 
 pub const VulkanDeviceQueue = struct {
@@ -33,32 +34,38 @@ pub const VulkanDeviceQueue = struct {
 
 pub const VulkanCommandPool = struct {
   pool : vk.CommandPool,
+  vkd : * const VulkanDeviceContext,
 
-  pub fn init(vkd : VulkanDeviceContext, createInfo : vk.CommandPoolCreateInfo)
+  pub fn init(
+    vkd : * const VulkanDeviceContext, createInfo : vk.CommandPoolCreateInfo
+  )
     !@This()
   {
     return @This() {
-      .pool = try vkd.vkdd.createCommandPool(vkd.device, createInfo, null)
+      .pool = try vkd.vkdd.createCommandPool(vkd.device, createInfo, null),
+      .vkd = vkd,
     };
   }
 
-  pub fn deinit(self : @This(), vkd : VulkanDeviceContext) void {
-    // vkd.vkdd.destroyCommandPool(vkd.device, self.pool, null);
+  pub fn deinit(self : @This()) void {
+    self.vkd.vkdd.destroyCommandPool(self.vkd.device, self.pool, null);
   }
 };
 
 pub const VulkanCommandBuffer = struct {
   buffers : std.ArrayList(vk.CommandBuffer),
   commandPool : vk.CommandPool,
+  vkd : * const VulkanDeviceContext,
 
   pub fn init(
     allocator : * std.mem.Allocator
-  , vkd : VulkanDeviceContext
+  , vkd : * const VulkanDeviceContext
   , allocateInfo : vk.CommandBufferAllocateInfo
   ) !@This() {
     var self = @This() {
       .buffers = std.ArrayList(vk.CommandBuffer).init(allocator),
       .commandPool = allocateInfo.commandPool,
+      .vkd = vkd
     };
 
     try self.buffers.resize(allocateInfo.commandBufferCount);
@@ -71,12 +78,14 @@ pub const VulkanCommandBuffer = struct {
     return self;
   }
 
-  pub fn deinit(self : @This(), vkd : VulkanDeviceContext) void {
-    vk.freeCommandBuffers(
-      vkd.device, self.commandPool, self.buffers.len, self.buffers.items
+  pub fn deinit(self : @This()) void {
+    self.vkd.vkdd.freeCommandBuffers(
+      self.vkd.device, self.commandPool,
+      @intCast(u32, self.buffers.items.len),
+      self.buffers.items.ptr,
     );
 
-    buffers.deinit();
+    self.buffers.deinit();
   }
 };
 
@@ -86,9 +95,10 @@ pub const VulkanSwapchainImage = struct {
   semaphoreImageAcquired : vk.Semaphore,
   semaphoreRenderFinished : vk.Semaphore,
   fenceFrame : vk.Fence,
+  vkd : * const VulkanDeviceContext,
 
   pub fn init(
-    vkd : VulkanDeviceContext, image : vk.Image, format : vk.Format
+    vkd : * const VulkanDeviceContext, image : vk.Image, format : vk.Format
   ) !@This() {
     const view =
       try vkd.vkdd.createImageView(
@@ -140,10 +150,25 @@ pub const VulkanSwapchainImage = struct {
     , .semaphoreImageAcquired = semaphoreImageAcquired
     , .semaphoreRenderFinished = semaphoreRenderFinished
     , .fenceFrame = fenceFrame
+    , .vkd = vkd
     };
   }
 
   pub fn deinit(self : @This()) void {
+    if (self.semaphoreImageAcquired != .null_handle)
+      self.vkd.vkdd.destroySemaphore(
+        self.vkd.device, self.semaphoreImageAcquired, null
+      );
+
+    if (self.semaphoreRenderFinished != .null_handle)
+      self.vkd.vkdd.destroySemaphore(
+        self.vkd.device, self.semaphoreRenderFinished, null
+      );
+
+    if (self.fenceFrame != .null_handle)
+      self.vkd.vkdd.destroyFence(
+        self.vkd.device, self.fenceFrame, null
+      );
   }
 
   pub fn WaitForFence(self : @This(), vkd : VulkanDeviceContext) !void {
@@ -167,11 +192,13 @@ pub const VulkanSwapchain = struct {
   imageIdx : u32,
   nextImageAcquired : vk.Semaphore,
 
+  vkd : * const VulkanDeviceContext,
+
   pub fn reinit(
     allocator : * std.mem.Allocator
   , vki : vk_dispatcher.VulkanInstanceDispatch
   , surface : vk.SurfaceKHR
-  , vkd : VulkanDeviceContext
+  , vkd : * const VulkanDeviceContext
   , extent : vk.Extent2D
   , oldSwapchainHandle : vk.SwapchainKHR
   ) !@This() {
@@ -322,6 +349,7 @@ pub const VulkanSwapchain = struct {
     , .swapImages = swapImages
     , .imageIdx = imageResult.imageIndex
     , .nextImageAcquired = nextImageAcquired
+    , .vkd = vkd
     };
   }
 
@@ -329,10 +357,19 @@ pub const VulkanSwapchain = struct {
     allocator : * std.mem.Allocator
   , vki : vk_dispatcher.VulkanInstanceDispatch
   , surface : vk.SurfaceKHR
-  , vkd : VulkanDeviceContext
+  , vkd : * const VulkanDeviceContext
   , extent : vk.Extent2D
   ) !@This() {
     return try reinit(allocator, vki, surface, vkd, extent, .null_handle);
+  }
+
+  pub fn deinit(self : @This()) void {
+    for (self.swapImages.items) |swapImage| swapImage.deinit();
+    self.swapImages.deinit();
+
+    self.vkd.vkdd.destroySemaphore(
+      self.vkd.device, self.nextImageAcquired, null
+    );
   }
 
   pub fn CurrentImage(self : @This()) vk.Image {
@@ -496,6 +533,7 @@ pub const VulkanDeviceContext = struct {
   deviceQueue : VulkanDeviceQueues,
   queueGraphics : VulkanDeviceQueue,
   queuePresent : VulkanDeviceQueue,
+  queueGTC : VulkanDeviceQueue,
 
   pub fn init(
     allocator : * std.mem.Allocator
@@ -569,6 +607,7 @@ pub const VulkanDeviceContext = struct {
 
     self.queueFamilyProperties =
       @TypeOf(self.queueFamilyProperties).init(allocator);
+    errdefer self.queueFamilyProperties.deinit();
 
     try self.queueFamilyProperties.resize(queueFamilyPropertyLen);
 
@@ -600,6 +639,13 @@ pub const VulkanDeviceContext = struct {
 
       if (properties.queueFlags.contains(.{.transfer_bit = true})) {
         self.deviceQueue.transferIdx = family;
+      }
+
+      if (
+        properties.queueFlags.contains(
+          .{.transfer_bit = true, .compute_bit = true, .graphics_bit = true})
+      ) {
+        self.deviceQueue.gtcIdx = family;
       }
     }
 
@@ -649,8 +695,13 @@ pub const VulkanDeviceContext = struct {
         self.device, vki.vkGetDeviceProcAddr
       );
 
+    errdefer self.vkdd.destroyDevice(self.device, null);
+
     self.queueGraphics =
       VulkanDeviceQueue.init(self, self.deviceQueue.graphicsIdx);
+
+    self.queueGTC =
+      VulkanDeviceQueue.init(self, self.deviceQueue.gtcIdx);
 
     self.queuePresent =
       VulkanDeviceQueue.init(self, self.deviceQueue.presentIdx);
@@ -659,6 +710,8 @@ pub const VulkanDeviceContext = struct {
   }
 
   pub fn deinit(self : @This()) void {
+    self.vkdd.destroyDevice(self.device, null);
+    self.queueFamilyProperties.deinit();
   }
 };
 
@@ -709,7 +762,7 @@ pub const VulkanAppContext = struct {
 
     const swapchain =
       try VulkanSwapchain.init(
-        allocator, vki, surface, devices.items[0]
+        allocator, vki, surface, &devices.items[0]
       , .{ .width = 800, .height = 600}
       );
     errdefer swapchain.deinit();
@@ -725,8 +778,19 @@ pub const VulkanAppContext = struct {
   }
 
   pub fn deinit(self : @This()) void {
+    // -- deinit device-related info
+    self.swapchain.deinit();
+
+    // -- deinit devices
     for (self.devices.items) |device| device.deinit();
     self.devices.deinit();
+
+    // -- deinit instance
+    if (self.surface != .null_handle)
+      self.vki.destroySurfaceKHR(self.instance, self.surface, null);
+
+    if (self.instance != .null_handle)
+      self.vki.destroyInstance(self.instance, null);
   }
 
   fn ConstructInstance(
@@ -815,8 +879,24 @@ pub const VulkanAppContext = struct {
         physicalDevice, null, &extensionLen, extensions.items.ptr
       );
 
-      for (extensions.items) |ext| {
-        _ = std.c.printf("%s\n", ext.extensionName);
+      for (deviceExtensions) |extReq| {
+        var exists = false;
+        for (extensions.items) |ext| {
+          if (
+            std.cstr.cmp(
+              @ptrCast([*:0] const u8, &ext.extensionName[0]), extReq
+            ) == 0
+          ) {
+            exists = true;
+            break;
+          }
+        }
+
+        if (!exists) {
+          _ = std.c.printf(
+            "ERROR: req extension '%s' doesn't exist!\n", extReq
+          );
+        }
       }
 
       devices.items[it] = try

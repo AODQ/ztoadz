@@ -12,6 +12,7 @@ pub const AllocatorDedicated = struct {
   pub const Buffer = struct {
     buffer : vk.Buffer,
     allocation : vk.DeviceMemory,
+    size : usize,
   };
 
   pub const Image = struct {
@@ -68,6 +69,7 @@ pub const AllocatorDedicated = struct {
     var buffer : Buffer = undefined;
 
     buffer.buffer = try self.vkd.vkdd.createBuffer(self.vkd.device, info, null);
+    buffer.size = info.size;
 
     // -- memory requirements
     var dedicatedReqs = vk.MemoryDedicatedRequirements {

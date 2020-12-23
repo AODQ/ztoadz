@@ -72,6 +72,7 @@ pub const VulkanDeviceDispatch = struct {
   vkGetDeviceQueue: vk.PfnGetDeviceQueue,
   vkGetSwapchainImagesKHR: vk.PfnGetSwapchainImagesKHR,
   vkMapMemory: vk.PfnMapMemory,
+  vkCmdFillBuffer: vk.PfnCmdFillBuffer,
   vkQueuePresentKHR: vk.PfnQueuePresentKHR,
   vkQueueSubmit: vk.PfnQueueSubmit,
   vkQueueWaitIdle: vk.PfnQueueWaitIdle,

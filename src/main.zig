@@ -30,7 +30,7 @@ pub fn main() !void {
   const requiredDeviceExtensions = [_][*:0] const u8 {
     vk.extension_info.khr_swapchain.name,
     vk.extension_info.khr_deferred_host_operations.name,
-    // vk.extension_info.khr_ray_tracing_pipeline.name,
+    vk.extension_info.khr_ray_tracing_pipeline.name,
     vk.extension_info.khr_acceleration_structure.name,
     vk.extension_info.khr_ray_query.name,
   };
@@ -97,6 +97,52 @@ pub fn main() !void {
       );
   }
 
+  defer vkdAllocator.DestroyBuffer(buffer);
+
+
+  // -- create command pool & buffer
+
+  var commandPool =
+    try ztd.VulkanCommandPool.init(
+      vkd
+    , vk.CommandPoolCreateInfo {
+        .pNext = null
+      , .flags = vk.CommandPoolCreateFlags.fromInt(0)
+      , .queueFamilyIndex = vkd.queueGTC.family
+      }
+    );
+  defer commandPool.deinit();
+
+  var commandBuffers =
+    try ztd.VulkanCommandBuffer.init(
+      &debugAllocator.allocator
+    , vkd
+    , vk.CommandBufferAllocateInfo {
+        .pNext = null
+      , .commandPool = commandPool.pool
+      , .level = vk.CommandBufferLevel.primary
+      , .commandBufferCount = 1
+      }
+    );
+  defer commandBuffers.deinit();
+
+  // record
+  var beginInfo = vk.CommandBufferBeginInfo {
+    .flags = vk.CommandBufferUsageFlags { .one_time_submit_bit = true },
+    .pInheritanceInfo = null,
+  };
+
+  try vkd.vkdd.beginCommandBuffer(commandBuffers.buffers.items[0], beginInfo);
+
+  var fillValue : f32 = 0.275;
+
+  vkd.vkdd.cmdFillBuffer(
+    commandBuffers.buffers.items[0],
+    buffer.buffer,
+    0, buffer.size,
+    @ptrCast(* u32, &fillValue).*
+  );
+
   // read back undefined memory
   const data =
     try vkd.vkdd.mapMemory(
@@ -108,34 +154,6 @@ pub fn main() !void {
     "first elements: %f, %f, %f, %f\n", fdata[0], fdata[1], fdata[2], fdata[3]
   );
   vkd.vkdd.unmapMemory(vkd.device, buffer.allocation);
-
-  vkdAllocator.DestroyBuffer(buffer);
-
-
-
-  // var commandPool =
-  //   try ztd.VulkanCommandPool.init(
-  //     vkDevice.*
-  //   , vk.CommandPoolCreateInfo {
-  //       .pNext = null
-  //     , .flags = vk.CommandPoolCreateFlags.fromInt(0)
-  //     , .queueFamilyIndex = vkDevice.queueGraphics.family
-  //     }
-  //   );
-  // defer commandPool.deinit(vkDevice.*);
-
-  // var commandBuffers =
-  //   ztd.VulkanCommandBuffer.init(
-  //     &debugAllocator.allocator
-  //   , vkDevice.*
-  //   , vk.CommandBufferAllocateInfo {
-  //       .pNext = null
-  //     , .commandPool = commandPool.pool
-  //     , .level = vk.CommandBufferLevel.primary
-  //     , .commandBufferCount = 3
-  //     }
-  //   );
-  // defer commandBuffers.deinit(vkDevice.*);
 
   // vk.RenderPass renderpass =
   //   vkDevice.vkdd.createRenderPass2(
