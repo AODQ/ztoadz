@@ -121,12 +121,13 @@ pub const VulkanSwapchainImage = struct {
         }
       , null
       );
+    errdefer vkd.vkdd.destroyImageView(vkd.device, view, null);
 
     const semaphoreImageAcquired =
       try vkd.vkdd.createSemaphore(vkd.device, .{.flags = .{}}, null);
 
     errdefer
-      vkd.vkdd.vkDestroySemaphore(
+      vkd.vkdd.destroySemaphore(
         vkd.device, semaphoreImageAcquired, null
       );
 
@@ -134,7 +135,7 @@ pub const VulkanSwapchainImage = struct {
       try vkd.vkdd.createSemaphore(vkd.device, .{.flags = .{}}, null);
 
     errdefer
-      vkd.vkdd.vkDestroySemaphore(
+      vkd.vkdd.destroySemaphore(
         vkd.device, semaphoreRenderFinished, null
       );
 
@@ -169,6 +170,8 @@ pub const VulkanSwapchainImage = struct {
       self.vkd.vkdd.destroyFence(
         self.vkd.device, self.fenceFrame, null
       );
+
+    self.vkd.vkdd.destroyImageView(self.vkd.device, self.view, null);
   }
 
   pub fn WaitForFence(self : @This(), vkd : VulkanDeviceContext) !void {
@@ -258,9 +261,9 @@ pub const VulkanSwapchain = struct {
     }
 
     //
-    const concurrent = vkd.queueGraphics.family != vkd.queuePresent.family;
+    const concurrent = vkd.queueGTC.family != vkd.queuePresent.family;
     const queueFamilyIndices = [_] u32 {
-      vkd.queueGraphics.family, vkd.queuePresent.family
+      vkd.queueGTC.family, vkd.queuePresent.family
     };
 
     // spec states:
@@ -364,6 +367,7 @@ pub const VulkanSwapchain = struct {
   }
 
   pub fn deinit(self : @This()) void {
+    self.vkd.vkdd.destroySwapchainKHR(self.vkd.device, self.swapchain, null);
     for (self.swapImages.items) |swapImage| swapImage.deinit();
     self.swapImages.deinit();
 
@@ -399,7 +403,7 @@ pub const VulkanSwapchain = struct {
     // submit command buffer
     const waitStage = [_]vk.PipelineStageFlags {.{.top_of_pipe_bit = true}};
     try vkd.queueSubmit(
-      vkd.queueGraphics.handle
+      vkd.queueGTC.handle
     , 1
     , &[_]vk.SubmitInfo {.{
         .waitSemaphoreCount = 1
@@ -531,7 +535,7 @@ pub const VulkanDeviceContext = struct {
   queueFamilyProperties : std.ArrayList(vk.QueueFamilyProperties),
 
   deviceQueue : VulkanDeviceQueues,
-  queueGraphics : VulkanDeviceQueue,
+  // queueGraphics : VulkanDeviceQueue,
   queuePresent : VulkanDeviceQueue,
   queueGTC : VulkanDeviceQueue,
 
@@ -585,11 +589,23 @@ pub const VulkanDeviceContext = struct {
       // self.physicalDevicePropertiesMeshShader);
 
     { // get device memory properties
-      var physicalDeviceMemoryProperties = vk.PhysicalDeviceMemoryProperties2 {
-        .pNext = &self.physicalDeviceMemoryBudgetProperties
-      , .memoryProperties = undefined
-      };
+      var physicalDeviceMemoryProperties : vk.PhysicalDeviceMemoryProperties2 =
+        undefined
+      ;
       zeroInitInPlace(&self.physicalDeviceMemoryBudgetProperties);
+
+      physicalDeviceMemoryProperties.sType =
+        vk.StructureType.physical_device_memory_properties_2
+      ;
+
+      self.physicalDeviceMemoryBudgetProperties.sType =
+        vk.StructureType.physical_device_memory_budget_properties_ext
+      ;
+
+      self.physicalDeviceMemoryBudgetProperties.pNext = null;
+      physicalDeviceMemoryProperties.pNext =
+        &self.physicalDeviceMemoryBudgetProperties
+      ;
 
       vki.vkGetPhysicalDeviceMemoryProperties2(
         self.physicalDevice, &physicalDeviceMemoryProperties
@@ -654,7 +670,7 @@ pub const VulkanDeviceContext = struct {
     var deviceQueueCreateInfo = [_]vk.DeviceQueueCreateInfo {
       .{
         .flags = .{}
-      , .queueFamilyIndex = self.deviceQueue.graphicsIdx
+      , .queueFamilyIndex = self.deviceQueue.gtcIdx
       , .queueCount = 1
       , .pQueuePriorities = &priority
       }
@@ -664,12 +680,12 @@ pub const VulkanDeviceContext = struct {
       , .queueCount = 1
       , .pQueuePriorities = &priority
       }
-    , .{
-        .flags = .{}
-      , .queueFamilyIndex = self.deviceQueue.transferIdx
-      , .queueCount = 1
-      , .pQueuePriorities = &priority
-      }
+    // , .{
+    //     .flags = .{}
+    //   , .queueFamilyIndex = self.deviceQueue.transferIdx
+    //   , .queueCount = 1
+    //   , .pQueuePriorities = &priority
+    //   }
     };
 
     const queueCount = 3;
@@ -697,8 +713,8 @@ pub const VulkanDeviceContext = struct {
 
     errdefer self.vkdd.destroyDevice(self.device, null);
 
-    self.queueGraphics =
-      VulkanDeviceQueue.init(self, self.deviceQueue.graphicsIdx);
+    // self.queueGraphics =
+    //   VulkanDeviceQueue.init(self, self.deviceQueue.graphicsIdx);
 
     self.queueGTC =
       VulkanDeviceQueue.init(self, self.deviceQueue.gtcIdx);
@@ -723,19 +739,21 @@ pub const VulkanAppContext = struct {
   vkb : vk_dispatcher.VulkanBaseDispatch,
   vki : vk_dispatcher.VulkanInstanceDispatch,
   devices : std.ArrayList(VulkanDeviceContext),
-  surface : vk.SurfaceKHR,
-  swapchain : VulkanSwapchain, // owned by first device
+  // surface : vk.SurfaceKHR,
+  // swapchain : VulkanSwapchain, // owned by first device
 
   pub fn init(
     allocator : * std.mem.Allocator,
-    window : * glfw.GLFWwindow,
-    deviceExtensions : [] const [*:0] const u8
+    // window : * glfw.GLFWwindow,
+    deviceExtensions : [] const [*:0] const u8,
+    instanceCreatePNext : * const c_void
   )
     !@This()
   {
     const vkb = try
       vk_dispatcher.VulkanBaseDispatch.load(glfw.glfwGetInstanceProcAddress);
-    const instance = try @This().ConstructInstance(vkb, allocator);
+    const instance =
+      try @This().ConstructInstance(vkb, allocator, instanceCreatePNext);
     const vki =
       try vk_dispatcher.VulkanInstanceDispatch.load(
         instance, glfw.glfwGetInstanceProcAddress
@@ -749,52 +767,53 @@ pub const VulkanAppContext = struct {
     }
 
     // for now, the window surface is owned by the first device
-    var surface : vk.SurfaceKHR = undefined;
-    if (
-      glfw.glfwCreateWindowSurface(
-        instance, window, null, &surface
-      ) != .success
-    ) {
-      return error.FailedToCreateWindowSurface;
-    }
+    // var surface : vk.SurfaceKHR = undefined;
+    // if (
+    //   glfw.glfwCreateWindowSurface(
+    //     instance, window, null, &surface
+    //   ) != .success
+    // ) {
+    //   return error.FailedToCreateWindowSurface;
+    // }
 
-    errdefer vki.destroySurfaceKHR(instance, surface, null);
+    // errdefer vki.destroySurfaceKHR(instance, surface, null);
 
-    const swapchain =
-      try VulkanSwapchain.init(
-        allocator, vki, surface, &devices.items[0]
-      , .{ .width = 800, .height = 600}
-      );
-    errdefer swapchain.deinit();
+    // const swapchain =
+    //   try VulkanSwapchain.init(
+    //     allocator, vki, surface, &devices.items[0]
+    //   , .{ .width = 800, .height = 600}
+    //   );
+    // errdefer swapchain.deinit();
 
     return VulkanAppContext {
       .instance = instance
     , .vkb = vkb
     , .vki = vki
     , .devices = devices
-    , .surface = surface
-    , .swapchain = swapchain
+    // , .surface = surface
+    // , .swapchain = swapchain
     };
   }
 
   pub fn deinit(self : @This()) void {
     // -- deinit device-related info
-    self.swapchain.deinit();
+    // self.swapchain.deinit();
 
     // -- deinit devices
     for (self.devices.items) |device| device.deinit();
     self.devices.deinit();
 
     // -- deinit instance
-    if (self.surface != .null_handle)
-      self.vki.destroySurfaceKHR(self.instance, self.surface, null);
+    // if (self.surface != .null_handle)
+    //   self.vki.destroySurfaceKHR(self.instance, self.surface, null);
 
     if (self.instance != .null_handle)
       self.vki.destroyInstance(self.instance, null);
   }
 
   fn ConstructInstance(
-    vkb : vk_dispatcher.VulkanBaseDispatch, allocator : * std.mem.Allocator
+    vkb : vk_dispatcher.VulkanBaseDispatch, allocator : * std.mem.Allocator,
+    instanceCreatePNext : * const c_void
   ) !vk.Instance {
     const appInfo = vk.ApplicationInfo {
       .pApplicationName = "zTOADz"
@@ -827,15 +846,19 @@ pub const VulkanAppContext = struct {
 
     var instance : vk.Instance = undefined;
 
+    var layers = [_][*:0] const u8 {
+      "VK_LAYER_KHRONOS_validation",
+    };
+
     const instanceCreateInfo = vk.InstanceCreateInfo {
-      .flags = vk.InstanceCreateFlags.fromInt(0)
-    , .pApplicationInfo = &appInfo
-    , .enabledLayerCount = 0
-    , .ppEnabledLayerNames = undefined
-    , .enabledExtensionCount = glfwExtensionLength
-    , .ppEnabledExtensionNames =
-        @ptrCast([*] const [*:0] const u8, glfwExtensions)
-    , .pNext = null
+      .flags = vk.InstanceCreateFlags.fromInt(0),
+      .pApplicationInfo = &appInfo,
+      .enabledLayerCount = 1,
+      .ppEnabledLayerNames = @ptrCast([*] const [*:0] const u8, &layers),
+      .enabledExtensionCount = glfwExtensionLength,
+      .ppEnabledExtensionNames =
+        @ptrCast([*] const [*:0] const u8, glfwExtensions),
+      .pNext = @ptrCast(* const c_void, instanceCreatePNext),
     };
 
     return try vkb.createInstance(instanceCreateInfo, null);
@@ -908,3 +931,13 @@ pub const VulkanAppContext = struct {
     return devices;
   }
 };
+
+/// cast any slice/list/array into C ptr for Vulkan consumption
+pub fn PtrCast(items : anytype) [*] @TypeOf(items[0]) {
+  return @ptrCast([*] @TypeOf(items[0]), &items[0]);
+}
+
+/// cast any slice/list/array into C ptr for Vulkan consumption
+pub fn PtrConstCast(items : anytype) [*] const @TypeOf(items[0]) {
+  return @ptrCast([*] const @TypeOf(items[0]), &items[0]);
+}

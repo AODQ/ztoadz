@@ -652,7 +652,6 @@ pub const SamplerPool = struct {
   }
 };
 
-
 // ----
 
 pub fn AccessFlagsForImageLayout(layout : vk.ImageLayout) vk.AccessFlags {
@@ -735,3 +734,7 @@ pub fn CmdBarrierImageLayout(
     vkd, commandBuffer, image, oldImageLayout, newImageLayout, subresourceRange
   );
 }
+
+// ----
+
+

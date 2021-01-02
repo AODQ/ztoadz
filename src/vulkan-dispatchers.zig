@@ -65,6 +65,10 @@ pub const VulkanDeviceDispatch = struct {
   vkDestroyShaderModule: vk.PfnDestroyShaderModule,
   vkDestroySwapchainKHR: vk.PfnDestroySwapchainKHR,
   vkDeviceWaitIdle: vk.PfnDeviceWaitIdle,
+  vkCreateDescriptorPool : vk.PfnCreateDescriptorPool,
+  vkCreateDescriptorSetLayout : vk.PfnCreateDescriptorSetLayout,
+  vkDestroyDescriptorPool : vk.PfnDestroyDescriptorPool,
+  vkDestroyDescriptorSetLayout : vk.PfnDestroyDescriptorSetLayout,
   vkEndCommandBuffer: vk.PfnEndCommandBuffer,
   vkFreeCommandBuffers: vk.PfnFreeCommandBuffers,
   vkFreeMemory: vk.PfnFreeMemory,
@@ -76,9 +80,16 @@ pub const VulkanDeviceDispatch = struct {
   vkQueuePresentKHR: vk.PfnQueuePresentKHR,
   vkQueueSubmit: vk.PfnQueueSubmit,
   vkQueueWaitIdle: vk.PfnQueueWaitIdle,
+  vkCmdPipelineBarrier: vk.PfnCmdPipelineBarrier,
+  vkCreateComputePipelines: vk.PfnCreateComputePipelines,
+  vkCmdDispatch: vk.PfnCmdDispatch,
   vkResetFences: vk.PfnResetFences,
   vkUnmapMemory: vk.PfnUnmapMemory,
   vkWaitForFences: vk.PfnWaitForFences,
+  vkFreeDescriptorSets : vk.PfnFreeDescriptorSets,
+  vkAllocateDescriptorSets : vk.PfnAllocateDescriptorSets,
+  vkUpdateDescriptorSets : vk.PfnUpdateDescriptorSets,
+  vkCmdBindDescriptorSets : vk.PfnCmdBindDescriptorSets,
   usingnamespace vk.DeviceWrapper(@This());
 };
 
