@@ -21,9 +21,4 @@ void main() {
     = uvcoord.y;
   Image.data[3*(640*gl_GlobalInvocationID.y + gl_GlobalInvocationID.x) + 2]
     = 0.5f;
-
-  debugPrintfEXT(
-    "Heil from invocation %dx%d\n"
-  , gl_GlobalInvocationID.x, gl_GlobalInvocationID.y
-  );
 }

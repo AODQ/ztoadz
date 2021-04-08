@@ -1,12 +1,13 @@
 //! Module provides vulkan utility for zTOADz
 
-const std = @import("std");
-const assert = std.debug.assert;
-const glfw = @import("glfw.zig");
-const vk = @import("vulkan.zig");
-const vk_logger = @import("vulkan-logger.zig");
+const glfw          = @import("../third-party/glfw.zig");
+const vk_dispatcher = @import("../third-party/vulkan-dispatchers.zig");
+const vk            = @import("../third-party/vulkan.zig");
+const vk_logger     = @import("vulkan-logger.zig");
+const config        = @import("config.zig");
 
-const vk_dispatcher = @import("vulkan-dispatchers.zig");
+const std    = @import("std");
+const assert = std.debug.assert;
 
 pub fn zeroInitInPlace(ptr : anytype) void {
   ptr.* = std.mem.zeroInit(std.meta.Child(@TypeOf(ptr)), .{});
@@ -690,18 +691,44 @@ pub const VulkanDeviceContext = struct {
 
     const queueCount = 3;
 
+    var featureBufferDeviceAddress :
+      vk.PhysicalDeviceBufferDeviceAddressFeatures = undefined;
+
+    var features = vk.PhysicalDeviceFeatures2 {
+      .pNext = &featureBufferDeviceAddress,
+      .features = undefined,
+    };
+
+    zeroInitInPlace(&featureBufferDeviceAddress);
+    zeroInitInPlace(&features.features);
+
+    featureBufferDeviceAddress.sType =
+      .physical_device_buffer_device_address_features;
+
+    vki.getPhysicalDeviceFeatures2(
+      self.physicalDevice,
+      &features
+    );
+    assert(featureBufferDeviceAddress.bufferDeviceAddress == vk.TRUE);
+    zeroInitInPlace(&features.features);
+
+    featureBufferDeviceAddress.bufferDeviceAddress              = vk.TRUE;
+    featureBufferDeviceAddress.bufferDeviceAddressMultiDevice   = vk.FALSE;
+    featureBufferDeviceAddress.bufferDeviceAddressCaptureReplay = vk.FALSE;
+
     self.device = try vki.createDevice(
       self.physicalDevice
     , .{
-        .flags = .{}
-      , .queueCreateInfoCount = deviceQueueCreateInfo.len
-      , .pQueueCreateInfos = &deviceQueueCreateInfo
-      , .enabledLayerCount = 0
-      , .ppEnabledLayerNames = undefined
-      , .enabledExtensionCount = @intCast(u32, deviceExtensions.len)
-      , .ppEnabledExtensionNames = deviceExtensions.ptr
+        .flags = .{},
+        .pNext = &features,
+        .queueCreateInfoCount = deviceQueueCreateInfo.len,
+        .pQueueCreateInfos = &deviceQueueCreateInfo,
+        .enabledLayerCount = 0,
+        .ppEnabledLayerNames = undefined,
+        .enabledExtensionCount = @intCast(u32, deviceExtensions.len),
+        .ppEnabledExtensionNames = deviceExtensions.ptr,
           // @ptrCast([*] const [*:0] const u8, deviceExtensions.items[0])
-      , .pEnabledFeatures = null
+        .pEnabledFeatures = null,
       }
     , null
     );

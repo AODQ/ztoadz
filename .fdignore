@@ -1,0 +1,7 @@
+.git
+.*
+*.ppm
+*.html
+*.spv
+vim.custom
+README.md

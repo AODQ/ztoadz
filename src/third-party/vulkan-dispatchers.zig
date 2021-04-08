@@ -8,6 +8,7 @@ pub const VulkanBaseDispatch = struct {
 
 pub const VulkanInstanceDispatch = struct {
   vkCreateDevice : vk.PfnCreateDevice,
+  vkGetPhysicalDeviceFeatures2 : vk.PfnGetPhysicalDeviceFeatures2,
   vkDestroyInstance : vk.PfnDestroyInstance,
   vkDestroySurfaceKHR : vk.PfnDestroySurfaceKHR,
   vkEnumerateDeviceExtensionProperties : vk.PfnEnumerateDeviceExtensionProperties,
@@ -45,6 +46,7 @@ pub const VulkanDeviceDispatch = struct {
   vkCreateCommandPool: vk.PfnCreateCommandPool,
   vkCreateFence: vk.PfnCreateFence,
   vkCreateFramebuffer: vk.PfnCreateFramebuffer,
+  vkDebugMarkerSetObjectNameEXT : vk.PfnDebugMarkerSetObjectNameEXT,
   vkCreateGraphicsPipelines: vk.PfnCreateGraphicsPipelines,
   vkCreateImageView: vk.PfnCreateImageView,
   vkCreatePipelineLayout: vk.PfnCreatePipelineLayout,

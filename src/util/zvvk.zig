@@ -2,10 +2,10 @@
 
 pub usingnamespace @import("ztoadz.zig");
 
-const assert = std.debug.assert;
+const vk = @import("../third-party/vulkan.zig");
 
+const assert = std.debug.assert;
 const std = @import("std");
-const vk = @import("vulkan.zig");
 
 pub const AllocatorDedicated = struct {
 
@@ -128,68 +128,162 @@ pub const AllocatorDedicated = struct {
     return buffer;
   }
 
-  pub fn CreateBufferSimple(
-    self : @This(),
-    size : vk.DeviceSize,
-    usage : vk.BufferUsageFlags,
-    memoryUsage : vk.MemoryPropertyFlags,
-  ) !Buffer {
-    var info = vk.BufferCreateInfo {
-      .size = size,
-      .usage = usage
-    };
-
-    return try self.CreateBuffer(info, memoryUsage);
-  }
-
-  pub fn CreateStagingBuffer(
+  pub fn CreateBufferWithInitialData(
+    self : * @This(),
     commandBuffer : vk.CommandBuffer,
-    size : vk.DeviceSize,
-    data : * const void,
-    usage : vk.BufferUsageFlags,
-    memoryProperties : vk.MemoryPropertyFlags,
+    info : vk.BufferCreateInfo,
+    memUsage : vk.MemoryPropertyFlags,
+    data : [] const u8
   ) !Buffer {
-    // create staging buffer
-    var stagingBuffer =
-      try self.CreateBuffer(
-        size,
-        vk.BufferUsageFlags.transfer_src_bit,
-        vk.MemoryPropertyFlags.host_visible_bit
-      | vk.MemoryPropertyFlags.host_coherent_bit
-      );
 
+    assert(info.size == data.len);
+
+    // buffer that can be easily mapped to CPU
+    var stagingBuffer : Buffer =
+      try self.CreateBuffer(
+        vk.BufferCreateInfo {
+          .size = info.size,
+          .usage = vk.BufferUsageFlags { .transfer_src_bit = true },
+          .flags = vk.BufferCreateFlags {},
+          .sharingMode = vk.SharingMode.exclusive,
+          .queueFamilyIndexCount = info.queueFamilyIndexCount,
+          .pQueueFamilyIndices = info.pQueueFamilyIndices,
+        },
+        vk.MemoryPropertyFlags {
+          .host_visible_bit = true,
+          .host_coherent_bit = true
+        },
+      );
     (try self.stagingBuffers.addOne()).* = stagingBuffer;
 
-    // copy data to memory
-    if (data) {
-      var mapped =
+    // -- map & write to memory
+    var mappedMemory =
+      @ptrCast(
+        [*c] u8,
         try self.vkd.vkdd.mapMemory(
-          self.vkd.device, stagingBuffer.allocation, 0, size, 0
-        );
-      std.c.memcpy(mapped, data, size);
-      vk.unmapMemory(self.vkd.device, stagingBuffer.allocation);
-    }
+          self.vkd.device,
+          stagingBuffer.allocation,
+          0, info.size,
+          vk.MemoryMapFlags { },
+        ),
+      );
 
-    // create result buffer
-    resultBufferCreateInfo = vk.BufferCreateInfo {
-      .size = size,
-      .usage = usage | vk.BufferUsageFlags.transfer_dst_bit,
-    };
+    assert(mappedMemory != null);
 
-    var resultBuffer =
-      try self.CreateBuffer(resultBufferCreateInfo, memoryProperties);
+    std.mem.copy(
+      u8,
+      @ptrCast([*] u8, mappedMemory)[0 .. info.size],
+      @ptrCast([*] const u8, data)[0 .. info.size],
+    );
 
-    // copy staging
+    self.vkd.vkdd.vkUnmapMemory(
+      self.vkd.device,
+      stagingBuffer.allocation,
+    );
+
+    // -- create final buffer to be staged
+    var finalBufferInfo = info;
+    finalBufferInfo.usage =
+      vk.BufferUsageFlags.merge(
+        finalBufferInfo.usage,
+        vk.BufferUsageFlags { .transfer_dst_bit = true, },
+      );
+    var finalBuffer : Buffer = try self.CreateBuffer(finalBufferInfo, memUsage);
+
+    // -- copy staging buffer device memory to final buffer & return
     var region = vk.BufferCopy {
       .srcOffset = 0,
       .dstOffset = 0,
-      .size = size,
+      .size      = info.size,
     };
-    try self.vkd.cmdCopyBuffer(
-      commandBuffer, stagingBuffer.buffer, resultBuffer.buffer, 1, &region
+
+    self.vkd.vkdd.cmdCopyBuffer(
+      commandBuffer, stagingBuffer.buffer, finalBuffer.buffer, 1,
+      @ptrCast([*] vk.BufferCopy, &region)
     );
 
-    return resultBuffer;
+    return finalBuffer;
+  }
+
+  pub fn CreateBufferWithInitialDataWithOneTimeCommandBuffer(
+    self : * @This(),
+    commandPool : vk.CommandPool,
+    info : vk.BufferCreateInfo,
+    memUsage : vk.MemoryPropertyFlags,
+    data : [] const u8,
+  ) !Buffer {
+
+    assert(data.len != 0);
+    assert(info.size != 0);
+    std.log.info("data: '{}'\n info: '{}'", .{data.len, info.size});
+    assert(info.size == data.len);
+
+    var commandBuffer =
+      try VulkanCommandBuffer.init(
+        self.allocator,
+        self.vkd,
+        vk.CommandBufferAllocateInfo {
+          .pNext = null,
+          .commandPool = commandPool,
+          .level = vk.CommandBufferLevel.primary,
+          .commandBufferCount = 1,
+        },
+      );
+    defer commandBuffer.deinit();
+
+    // -- start record
+    var beginInfo = vk.CommandBufferBeginInfo {
+      .flags = vk.CommandBufferUsageFlags { .one_time_submit_bit = true },
+      .pInheritanceInfo = null,
+    };
+
+    try self.vkd.vkdd.beginCommandBuffer(
+      commandBuffer.buffers.items[0], beginInfo
+    );
+
+    // copy data
+    var finalBuffer =
+      try self.CreateBufferWithInitialData(
+        commandBuffer.buffers.items[0],
+        info,
+        memUsage,
+        data,
+      );
+
+    // -- end record
+    _ = self.vkd.vkdd.vkEndCommandBuffer(commandBuffer.buffers.items[0]);
+
+    var submitInfo = vk.SubmitInfo {
+      .waitSemaphoreCount = 0,
+      .pWaitSemaphores = undefined,
+      .pWaitDstStageMask = undefined,
+      .commandBufferCount= 1,
+      .pCommandBuffers =
+        @ptrCast([*] const vk.CommandBuffer, &commandBuffer.buffers.items[0]),
+      .signalSemaphoreCount = 0,
+      .pSignalSemaphores = undefined,
+    };
+
+    try self.vkd.vkdd.queueSubmit(
+      self.vkd.queueGTC.handle,
+      1, @ptrCast([*] const vk.SubmitInfo, &submitInfo),
+      .null_handle,
+    );
+
+    try self.vkd.vkdd.queueWaitIdle(self.vkd.queueGTC.handle);
+
+    const nameInfo = vk.DebugMarkerObjectNameInfoEXT {
+      .objectType = vk.DebugReportObjectTypeEXT.buffer_ext,
+      .object = @bitCast(u64, finalBuffer.buffer),
+      .pObjectName = "FINAL BUFFAH!",
+    };
+    try self.vkd.vkdd.debugMarkerSetObjectNameEXT(
+      self.vkd.device,
+      nameInfo
+    );
+    // vk.PfnDebugMarkerSetObjectNameEXT(
+
+    return finalBuffer;
   }
 
   pub fn CreateImage(

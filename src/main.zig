@@ -1,14 +1,21 @@
-const std = @import("std");
+
+const glfw    = @import("third-party/glfw.zig");
+const img     = @import("io/img.zig");
+const vk      = @import("third-party/vulkan.zig");
+const ztd     = @import("util/ztoadz.zig");
+const zvvk    = @import("util/zvvk.zig");
+const modelio = @import("modelio/package.zig");
+
+const std    = @import("std");
 const assert = std.debug.assert;
-const glfw = @import("glfw.zig");
-const vk = @import("vulkan.zig");
-const ztd = @import("ztoadz.zig");
-const zvvk = @import("zvvk.zig");
 
 const workgroupWidth = 16;
-const workgroupHeight = 16;
+const workgroupHeight = 8;
 
-const img = @import("img.zig");
+
+
+// fn CreateB
+
 pub fn main() !void {
   std.log.info("{}", .{"initializing zTOADz"});
 
@@ -36,11 +43,11 @@ pub fn main() !void {
   // glfw.glfwWindowHint(glfw.GLFW_CLIENT_API, glfw.GLFW_NO_API);
   // glfw.glfwWindowHint(glfw.GLFW_RESIZABLE, glfw.GLFW_TRUE);
 
-  const window =
-    glfw.glfwCreateWindow(640, 480, "ztoadz", null, null)
-    orelse return error.GlfwCreateWindowFailed
-  ;
-  defer glfw.glfwDestroyWindow(window);
+  // const window =
+  //   glfw.glfwCreateWindow(640, 480, "ztoadz", null, null)
+  //   orelse return error.GlfwCreateWindowFailed
+  // ;
+  // defer glfw.glfwDestroyWindow(window);
 
   var debugAllocator =
     std.heap.GeneralPurposeAllocator(
@@ -92,7 +99,6 @@ pub fn main() !void {
     try zvvk.AllocatorDedicated.init(vkd, &debugAllocator.allocator)
   ;
   defer vkdAllocator.deinit();
-
 
   // create buffer
   var buffer : zvvk.AllocatorDedicated.Buffer = undefined;
@@ -386,6 +392,91 @@ pub fn main() !void {
     );
   defer commandBuffers.deinit();
 
+  // load scene
+  var scene : modelio.Scene = undefined;
+  defer scene.deinit();
+  {
+    var descriptorLayout = modelio.CreateInfo_VertexDescriptorLayout.init();
+
+    descriptorLayout
+      .vertexAttributes[
+        @enumToInt(modelio.VertexDescriptorAttributeType.origin)
+      ]
+      .bindingIndex = 0
+    ;
+
+    descriptorLayout
+      .vertexAttributes[
+        @enumToInt(modelio.VertexDescriptorAttributeType.origin)
+      ]
+      .underlyingType = modelio.VertexDescriptorUnderlyingType.float32_3
+    ;
+
+    scene =
+      try modelio.LoadScene(
+        &debugAllocator.allocator, "resources/bunny.obj", descriptorLayout
+      );
+  }
+
+  var bufferVertexOrigin : zvvk.AllocatorDedicated.Buffer = undefined;
+  // var bufferIndex: zvvk.AllocatorDedicated.Buffer = undefined;
+  // defer vkdAllocator.DestroyBuffer(bufferVertexOrigin);
+  // defer vkdAllocator.DestroyBuffer(bufferIndex);
+  // { // -- load model buffers
+
+  //   var submesh = scene.meshes.items[0].submeshes.items[0];
+
+  //   var attributeOrigin =
+  //     submesh
+  //       .vertexDescriptorLayout
+  //       .vertexAttributes[
+  //         @enumToInt(modelio.VertexDescriptorAttributeType.origin)
+  //       ];
+
+  //   const queueFamilyIndices = [_] u32 {
+  //     vkd.queueGTC.family
+  //   };
+
+  //   bufferVertexOrigin =
+  //     try vkdAllocator.CreateBufferWithInitialDataWithOneTimeCommandBuffer(
+  //       commandPool.pool,
+  //       vk.BufferCreateInfo {
+  //         .flags = vk.BufferCreateFlags {},
+  //         .size = attributeOrigin.bufferSubregion.length,
+  //         .usage = vk.BufferUsageFlags {
+  //           .shader_device_address_bit                            = true,
+  //           .storage_buffer_bit                                   = true,
+  //           .acceleration_structure_build_input_read_only_bit_khr = true
+  //         },
+  //         .sharingMode = vk.SharingMode.exclusive,
+  //         .queueFamilyIndexCount = queueFamilyIndices.len,
+  //         .pQueueFamilyIndices = &queueFamilyIndices,
+  //       },
+  //       vk.MemoryPropertyFlags {},
+  //       scene.buffers.items[1].memory.items,
+  //     );
+
+  //   bufferIndex =
+  //     try vkdAllocator.CreateBufferWithInitialDataWithOneTimeCommandBuffer(
+  //       commandPool.pool,
+  //       vk.BufferCreateInfo {
+  //         .flags = vk.BufferCreateFlags {},
+  //         .size = submesh.elementBufferSubregion.length,
+  //         .usage = vk.BufferUsageFlags {
+  //           .shader_device_address_bit                            = true,
+  //           .storage_buffer_bit                                   = true,
+  //           .acceleration_structure_build_input_read_only_bit_khr = true
+  //         },
+  //         .sharingMode = vk.SharingMode.exclusive,
+  //         .queueFamilyIndexCount = queueFamilyIndices.len,
+  //         .pQueueFamilyIndices = &queueFamilyIndices,
+  //       },
+  //       vk.MemoryPropertyFlags {},
+  //       scene.buffers.items[0].memory.items,
+  //     );
+  // }
+
+
   // record
   var beginInfo = vk.CommandBufferBeginInfo {
     .flags = vk.CommandBufferUsageFlags { .one_time_submit_bit = true },
@@ -410,20 +501,10 @@ pub fn main() !void {
 
   vkd.vkdd.cmdDispatch(
     commandBuffers.buffers.items[0],
-    (640 + 32 - 1) / 16,
-    (480 + 32 - 1) / 8,
+    (640 + workgroupWidth  - 1) / workgroupWidth,
+    (480 + workgroupHeight - 1) / workgroupHeight,
     1
   );
-
-  // var fillValue : f32 = 0.275;
-
-  // vkd.vkdd.cmdFillBuffer(
-  //   commandBuffers.buffers.items[0],
-  //   buffer.buffer,
-  //   0, buffer.size,
-  //   // 45
-  //   @ptrCast(* u32, &fillValue).*
-  // );
 
   // barrier
   var memoryBarrier = vk.MemoryBarrier {
@@ -461,7 +542,7 @@ pub fn main() !void {
 
   try vkd.vkdd.queueWaitIdle(vkd.queueGTC.handle);
 
-  // read back undefined memory
+  // read back memory
   const data =
     try vkd.vkdd.mapMemory(
       vkd.device, buffer.allocation, 0, vk.WHOLE_SIZE, vk.MemoryMapFlags{}

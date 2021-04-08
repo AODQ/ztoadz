@@ -1,5 +1,5 @@
 const std = @import("std");
-const vk = @import("vulkan.zig");
+const vk = @import("third-party/vulkan.zig");
 
 pub fn PhysicalDevice(
   physicalDeviceProperties : vk.PhysicalDeviceProperties
