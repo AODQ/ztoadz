@@ -59,9 +59,10 @@ pub const VulkanCommandBuffer = struct {
   vkd : * const VulkanDeviceContext,
 
   pub fn init(
-    allocator : * std.mem.Allocator
-  , vkd : * const VulkanDeviceContext
-  , allocateInfo : vk.CommandBufferAllocateInfo
+    allocator : * std.mem.Allocator,
+    vkd : * const VulkanDeviceContext,
+    allocateInfo : vk.CommandBufferAllocateInfo,
+    label : [*:0] const u8,
   ) !@This() {
     var self = @This() {
       .buffers = std.ArrayList(vk.CommandBuffer).init(allocator),
@@ -74,6 +75,15 @@ pub const VulkanCommandBuffer = struct {
     try vkd.vkdd.allocateCommandBuffers(
       vkd.device, allocateInfo
     , @ptrCast([*] vk.CommandBuffer, self.buffers.items)
+    );
+
+    try self.vkd.vkdd.setDebugUtilsObjectNameEXT(
+      self.vkd.device,
+      vk.DebugUtilsObjectNameInfoEXT {
+        .objectType = vk.ObjectType.command_pool,
+        .objectHandle = @bitCast(u64, self.commandPool),
+        .pObjectName = label,
+      },
     );
 
     return self;
@@ -753,6 +763,7 @@ pub const VulkanDeviceContext = struct {
   }
 
   pub fn deinit(self : @This()) void {
+    std.log.info("Destroying device...\n", .{});
     self.vkdd.destroyDevice(self.device, null);
     self.queueFamilyProperties.deinit();
   }
@@ -827,6 +838,7 @@ pub const VulkanAppContext = struct {
     // self.swapchain.deinit();
 
     // -- deinit devices
+    std.log.info("Deiniting device {}", .{self.devices.items});
     for (self.devices.items) |device| device.deinit();
     self.devices.deinit();
 
@@ -871,6 +883,23 @@ pub const VulkanAppContext = struct {
     const glfwExtensions =
       glfw.glfwGetRequiredInstanceExtensions(&glfwExtensionLength);
 
+    var instanceExtensions = std.ArrayList([*:0] const u8).init(allocator);
+    defer instanceExtensions.deinit();
+
+    // copy GLFW extensions
+    {
+      var extI : u32 = 0;
+      while (extI < glfwExtensionLength) : (extI += 1) {
+        (try instanceExtensions.addOne()).* = glfwExtensions[extI];
+      }
+    }
+
+    // add our own extensions
+    const debugReportInstanceExt : [*:0] const u8 = "VK_EXT_debug_utils";
+    (try instanceExtensions.addOne()).* = debugReportInstanceExt;
+
+
+    // -- create instance
     var instance : vk.Instance = undefined;
 
     var layers = [_][*:0] const u8 {
@@ -882,9 +911,9 @@ pub const VulkanAppContext = struct {
       .pApplicationInfo = &appInfo,
       .enabledLayerCount = 1,
       .ppEnabledLayerNames = @ptrCast([*] const [*:0] const u8, &layers),
-      .enabledExtensionCount = glfwExtensionLength,
+      .enabledExtensionCount = @intCast(u32, instanceExtensions.items.len),
       .ppEnabledExtensionNames =
-        @ptrCast([*] const [*:0] const u8, glfwExtensions),
+        @ptrCast([*] const [*:0] const u8, instanceExtensions.items),
       .pNext = @ptrCast(* const c_void, instanceCreatePNext),
     };
 

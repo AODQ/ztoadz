@@ -1,10 +1,13 @@
 
 const glfw    = @import("third-party/glfw.zig");
 const img     = @import("io/img.zig");
+const log     = @import("log.zig");
+const modelio = @import("modelio/package.zig");
+const util    = @import("util/package.zig");
 const vk      = @import("third-party/vulkan.zig");
 const ztd     = @import("util/ztoadz.zig");
+const zvk     = @import("zvk/package.zig");
 const zvvk    = @import("util/zvvk.zig");
-const modelio = @import("modelio/package.zig");
 
 const std    = @import("std");
 const assert = std.debug.assert;
@@ -17,42 +20,27 @@ const workgroupHeight = 8;
 // fn CreateB
 
 pub fn main() !void {
-  std.log.info("{}", .{"initializing zTOADz"});
+  log.info("{}", .{"initializing zTOADz"});
 
-  // {
-  //   var imageData : [128*128*3] f32 = undefined;
-
-  //   for (imageData) |_, it| {
-  //     const x = (it/3) % 128; const y = (it/3) / 128;
-  //     const p = it % 3;
-  //     imageData[it] =
-  //       switch (p) {
-  //         0 => @intToFloat(f32, x) / 128.0,
-  //         1 => @intToFloat(f32, y) / 128.0,
-  //         2 => 0.5,
-  //         else => 0.0,
-  //       };
-  //   }
-
-  //   try img.WriteImage(imageData[0..], img.ImageType.rgb, "test.ppm", 128, 128);
-  // }
-
-  if (glfw.glfwInit() == 0) { return error.GlfwInitFailed; }
-  defer glfw.glfwTerminate();
-
-  // glfw.glfwWindowHint(glfw.GLFW_CLIENT_API, glfw.GLFW_NO_API);
-  // glfw.glfwWindowHint(glfw.GLFW_RESIZABLE, glfw.GLFW_TRUE);
-
-  // const window =
-  //   glfw.glfwCreateWindow(640, 480, "ztoadz", null, null)
-  //   orelse return error.GlfwCreateWindowFailed
-  // ;
-  // defer glfw.glfwDestroyWindow(window);
+  // -- setup allocators
 
   var debugAllocator =
     std.heap.GeneralPurposeAllocator(
-      .{ .enable_memory_limit = true }
+      .{
+        .enable_memory_limit = true,
+        .safety = true,
+      }
     ){};
+
+  util.StringArena.arenaAllocator =
+    std.heap.ArenaAllocator.init(&debugAllocator.allocator)
+  ;
+
+  // -- initialize glfw / vulkan context
+
+
+  if (glfw.glfwInit() == 0) { return error.GlfwInitFailed; }
+  defer glfw.glfwTerminate();
 
   defer std.testing.expect(!debugAllocator.deinit());
 
@@ -84,7 +72,7 @@ pub fn main() !void {
       @ptrCast(* const c_void, &validationFeatures),
     )
     catch |err| {
-      std.log.crit(
+      log.crit(
         "{}{}", .{"Could not initialize vulkan application context: ", err}
       );
       return;
@@ -100,8 +88,12 @@ pub fn main() !void {
   ;
   defer vkdAllocator.deinit();
 
+  var vkAllocator =
+    try zvk.primitive.AllocatorDedicated.init(vkd, &debugAllocator.allocator);
+  defer vkAllocator.deinit();
+
   // create buffer
-  var buffer : zvvk.AllocatorDedicated.Buffer = undefined;
+  var buffer = zvk.primitive.Buffer.nullify();
   var bufferSize : vk.DeviceSize =
       640 * 480
     * 3 * @sizeOf(f32)
@@ -128,32 +120,25 @@ pub fn main() !void {
     };
 
     buffer =
-      try vkdAllocator.CreateBuffer(
+      try zvk.primitive.Buffer.init(
+        vkAllocator,
         bufferCreateInfo,
         vk.MemoryPropertyFlags {
           .host_visible_bit = true,
           .host_cached_bit = true,
           .host_coherent_bit = true,
         },
+        zvk.primitive.ObjectCreateInfo {
+          .label = "WriteImage",
+        },
       );
   }
-
-  defer vkdAllocator.DestroyBuffer(buffer);
+  defer buffer.deinit();
 
   // -- create shader pipeline
-  var raytraceModule : vk.ShaderModule = .null_handle;
+  var raytraceModule = zvk.primitive.ShaderModule.nullify();
+  defer raytraceModule.deinit();
   { // shader module
-    // const file =
-    //   try std.fs.cwd().openFile(
-    //     "/home/toad/repo/dtoadq/ztoadz/shaders/raytrace.spv",
-    //     // "~/repo/dtoadq/ztoadz/shaders/raytrace.spv",
-    //     .{ .read = true },
-    //   );
-    // defer file.close();
-
-    // const fileContents =
-    //   try file.reader().readAllAlloc(&debugAllocator.allocator, 1024*1024*20);
-    // defer debugAllocator.allocator.free(fileContents);
     const fileContents align(@alignOf(u32)) =
       @embedFile("../shaders/raytrace.spv").*;
 
@@ -164,11 +149,14 @@ pub fn main() !void {
     };
 
     raytraceModule =
-      try vkd.vkdd.createShaderModule(
-        vkd.device, shaderModuleCreateInfo, null
+      try zvk.primitive.ShaderModule.init(
+        vkAllocator,
+        shaderModuleCreateInfo,
+        zvk.primitive.ObjectCreateInfo {
+          .label = "RaytraceModule",
+        },
       );
   }
-  defer vkd.vkdd.destroyShaderModule(vkd.device, raytraceModule, null);
 
   // -- descriptor set
   const layoutBindings = [_] vk.DescriptorSetLayoutBinding {
@@ -181,7 +169,8 @@ pub fn main() !void {
     },
   };
 
-  var raytraceDescriptorSetLayout : vk.DescriptorSetLayout = .null_handle;
+  var raytraceDescriptorSetLayout = zvk.primitive.DescriptorSetLayout.nullify();
+  defer raytraceDescriptorSetLayout.deinit();
   {
     const bindingFlagInfo = vk.DescriptorSetLayoutBindingFlagsCreateInfo {
       .bindingCount = @intCast(u32, 0),
@@ -196,17 +185,17 @@ pub fn main() !void {
     };
 
     raytraceDescriptorSetLayout =
-      try vkd.vkdd.createDescriptorSetLayout(
-        vkd.device,
+      try zvk.primitive.DescriptorSetLayout.init(
+        vkAllocator,
         layoutInfo,
-        null
+        zvk.primitive.ObjectCreateInfo {
+          .label = "RaytraceDescriptorSetLayout"
+        },
       );
   }
-  defer vkd.vkdd.destroyDescriptorSetLayout(
-    vkd.device, raytraceDescriptorSetLayout, null
-  );
 
-  var raytraceDescriptorPool : vk.DescriptorPool = .null_handle;
+  var raytraceDescriptorPool = zvk.primitive.DescriptorPool.nullify();
+  defer raytraceDescriptorPool.deinit();
   {
     var poolSizes =
       std.ArrayList(vk.DescriptorPoolSize).init(&debugAllocator.allocator);
@@ -238,7 +227,7 @@ pub fn main() !void {
     }
 
     // -- create pool
-    const descriptorPool = vk.DescriptorPoolCreateInfo {
+    const descriptorPoolInfo = vk.DescriptorPoolCreateInfo {
       .maxSets = maxSets,
       .poolSizeCount = @intCast(u32, poolSizes.items.len),
       .pPoolSizes = @ptrCast([*] const vk.DescriptorPoolSize, poolSizes.items),
@@ -246,56 +235,49 @@ pub fn main() !void {
     };
 
     raytraceDescriptorPool =
-       try vkd.vkdd.createDescriptorPool(vkd.device, descriptorPool, null);
+      try zvk.primitive.DescriptorPool.init(
+        vkAllocator,
+        descriptorPoolInfo,
+        zvk.primitive.ObjectCreateInfo {
+          .label = "RaytraceDescriptorPool",
+        },
+      );
   }
-
-  defer
-    vkd.vkdd.destroyDescriptorPool(vkd.device, raytraceDescriptorPool, null)
-  ;
 
   // allocate descriptor sets
-  var descriptorSets =
-    std.ArrayList(vk.DescriptorSet).init(&debugAllocator.allocator);
-  defer {
-    vkd.vkdd.freeDescriptorSets(
-      vkd.device,
-      raytraceDescriptorPool,
-      @intCast(u32, descriptorSets.items.len),
-      ztd.PtrCast(descriptorSets.items),
-    )
-      catch |err| {}
-    ;
-    descriptorSets.deinit();
-  }
+  var descriptorSets = zvk.primitive.DescriptorSets.nullify();
+  defer descriptorSets.deinit();
 
   {
-    try descriptorSets.resize(1);
-
-
     var descriptorSetLayouts =
       std.ArrayList(vk.DescriptorSetLayout).init(&debugAllocator.allocator);
     defer descriptorSetLayouts.deinit();
 
     try descriptorSetLayouts.resize(1);
     for (descriptorSetLayouts.items) |_, it| {
-      descriptorSetLayouts.items[it] = raytraceDescriptorSetLayout;
+      descriptorSetLayouts.items[it] = raytraceDescriptorSetLayout.handle;
     }
 
     var descriptorSetAllocate = vk.DescriptorSetAllocateInfo {
-      .descriptorPool = raytraceDescriptorPool,
-      .descriptorSetCount = 1,
+      .descriptorPool = raytraceDescriptorPool.handle,
+      .descriptorSetCount = @intCast(u32, descriptorSetLayouts.items.len),
       .pSetLayouts = ztd.PtrCast(descriptorSetLayouts.items),
     };
 
-    try vkd.vkdd.allocateDescriptorSets(
-      vkd.device, descriptorSetAllocate, ztd.PtrCast(descriptorSets.items)
-    );
+    descriptorSets =
+      try zvk.primitive.DescriptorSets.init(
+        vkAllocator,
+        descriptorSetAllocate,
+        zvk.primitive.ObjectCreateInfo {
+          .label = "RaytraceDescriptorSet",
+        },
+      );
   }
 
   // write descriptor
   var descriptorBufferInfo = [_] vk.DescriptorBufferInfo {
     .{
-      .buffer = buffer.buffer,
+      .buffer = buffer.handle,
       .offset = 0,
       .range = bufferSize,
     },
@@ -303,7 +285,7 @@ pub fn main() !void {
 
   var writeDescriptor = [_] vk.WriteDescriptorSet {
     .{
-      .dstSet = descriptorSets.items[0],
+      .dstSet = descriptorSets.handles.items[0],
       .dstBinding = 0,
       .dstArrayElement = 0,
       .descriptorType = vk.DescriptorType.storage_buffer,
@@ -320,7 +302,8 @@ pub fn main() !void {
     0, undefined,
   );
 
-  var pipelineLayout : vk.PipelineLayout = .null_handle;
+  var pipelineLayout = zvk.primitive.PipelineLayout.nullify();
+  defer pipelineLayout.deinit();
   {
     var info = vk.PipelineLayoutCreateInfo {
       .setLayoutCount = 1,
@@ -333,61 +316,64 @@ pub fn main() !void {
       .flags = .{},
     };
 
-    pipelineLayout = try vkd.vkdd.createPipelineLayout(vkd.device, info, null);
+    pipelineLayout =
+      try zvk.primitive.PipelineLayout.init(
+        vkAllocator,
+        info,
+        zvk.primitive.ObjectCreateInfo {
+          .label = "RaytracePipelineLayout",
+        },
+      );
   }
-  defer vkd.vkdd.destroyPipelineLayout(vkd.device, pipelineLayout, null);
 
-  var raytracePipeline : vk.Pipeline = .null_handle;
-  {
-    var computePipelineCreateInfo = vk.ComputePipelineCreateInfo {
-      .flags = .{},
-      .stage = .{
-        .stage = .{ .compute_bit = true },
-        .pSpecializationInfo = null,
-        .module = raytraceModule,
-        .pName = "main",
+  var raytracePipeline =
+    try zvk.primitive.ComputePipeline.init(
+      vkAllocator,
+      vk.ComputePipelineCreateInfo {
         .flags = .{},
+        .stage = .{
+          .stage = .{ .compute_bit = true },
+          .pSpecializationInfo = null,
+          .module = raytraceModule.handle,
+          .pName = "main",
+          .flags = .{},
+        },
+        .layout = pipelineLayout.handle,
+        .basePipelineHandle = .null_handle,
+        .basePipelineIndex = 0,
       },
-      .layout = pipelineLayout,
-      .basePipelineHandle = .null_handle,
-      .basePipelineIndex = 0,
-    };
-
-    _ = try vkd.vkdd.createComputePipelines(
-      vkd.device,
-      .null_handle, // pipeline cache
-      1,
-      @ptrCast(
-        [*] const vk.ComputePipelineCreateInfo, &computePipelineCreateInfo
-      ),
-      null,
-      @ptrCast([*] vk.Pipeline, &raytracePipeline),
+      zvk.primitive.ObjectCreateInfo {
+        .label = "RaytraceComputePipeline",
+      },
     );
-  }
-  defer vkd.vkdd.destroyPipeline(vkd.device, raytracePipeline, null);
+  defer raytracePipeline.deinit();
 
   // -- create command pool & buffer
-
   var commandPool =
-    try ztd.VulkanCommandPool.init(
-      vkd,
+    try zvk.primitive.CommandPool.init(
+      vkAllocator,
       vk.CommandPoolCreateInfo {
         .pNext = null,
         .flags = vk.CommandPoolCreateFlags.fromInt(0),
         .queueFamilyIndex = vkd.queueGTC.family,
       },
+      zvk.primitive.ObjectCreateInfo {
+        .label = "RaytraceCommandPool",
+      },
     );
   defer commandPool.deinit();
 
   var commandBuffers =
-    try ztd.VulkanCommandBuffer.init(
-      &debugAllocator.allocator,
-      vkd,
+    try zvk.primitive.CommandBuffers.init(
+      vkAllocator,
       vk.CommandBufferAllocateInfo {
         .pNext = null,
-        .commandPool = commandPool.pool,
+        .commandPool = commandPool.handle,
         .level = vk.CommandBufferLevel.primary,
         .commandBufferCount = 1,
+      },
+      zvk.primitive.ObjectCreateInfo {
+        .label = "RaytraceCommandBuffer",
       },
     );
   defer commandBuffers.deinit();
@@ -418,63 +404,69 @@ pub fn main() !void {
       );
   }
 
-  var bufferVertexOrigin : zvvk.AllocatorDedicated.Buffer = undefined;
-  // var bufferIndex: zvvk.AllocatorDedicated.Buffer = undefined;
-  // defer vkdAllocator.DestroyBuffer(bufferVertexOrigin);
-  // defer vkdAllocator.DestroyBuffer(bufferIndex);
-  // { // -- load model buffers
+  var bufferVertexOrigin = zvk.primitive.Buffer.nullify();
+  var bufferIndex = zvk.primitive.Buffer.nullify();
+  defer bufferVertexOrigin.deinit();
+  defer bufferIndex.deinit();
+  { // -- load model buffers
 
-  //   var submesh = scene.meshes.items[0].submeshes.items[0];
+    var submesh = scene.meshes.items[0].submeshes.items[0];
 
-  //   var attributeOrigin =
-  //     submesh
-  //       .vertexDescriptorLayout
-  //       .vertexAttributes[
-  //         @enumToInt(modelio.VertexDescriptorAttributeType.origin)
-  //       ];
+    var attributeOrigin =
+      submesh
+        .vertexDescriptorLayout
+        .vertexAttributes[
+          @enumToInt(modelio.VertexDescriptorAttributeType.origin)
+        ];
 
-  //   const queueFamilyIndices = [_] u32 {
-  //     vkd.queueGTC.family
-  //   };
+    const queueFamilyIndices = [_] u32 {
+      vkd.queueGTC.family
+    };
 
-  //   bufferVertexOrigin =
-  //     try vkdAllocator.CreateBufferWithInitialDataWithOneTimeCommandBuffer(
-  //       commandPool.pool,
-  //       vk.BufferCreateInfo {
-  //         .flags = vk.BufferCreateFlags {},
-  //         .size = attributeOrigin.bufferSubregion.length,
-  //         .usage = vk.BufferUsageFlags {
-  //           .shader_device_address_bit                            = true,
-  //           .storage_buffer_bit                                   = true,
-  //           .acceleration_structure_build_input_read_only_bit_khr = true
-  //         },
-  //         .sharingMode = vk.SharingMode.exclusive,
-  //         .queueFamilyIndexCount = queueFamilyIndices.len,
-  //         .pQueueFamilyIndices = &queueFamilyIndices,
-  //       },
-  //       vk.MemoryPropertyFlags {},
-  //       scene.buffers.items[1].memory.items,
-  //     );
+    bufferVertexOrigin =
+      try zvk.primitive.Buffer.initWithInitialDataWithOneTimeCommandBuffer(
+        vkAllocator,
+        commandPool.handle,
+        vk.BufferCreateInfo {
+          .flags = vk.BufferCreateFlags {},
+          .size = attributeOrigin.bufferSubregion.length,
+          .usage = vk.BufferUsageFlags {
+            .shader_device_address_bit                            = true,
+            .storage_buffer_bit                                   = true,
+            .acceleration_structure_build_input_read_only_bit_khr = true
+          },
+          .sharingMode = vk.SharingMode.exclusive,
+          .queueFamilyIndexCount = queueFamilyIndices.len,
+          .pQueueFamilyIndices = &queueFamilyIndices,
+        },
+        vk.MemoryPropertyFlags {},
+        scene.buffers.items[1].memory.items,
+        zvk.primitive.ObjectCreateInfo { .label = "VertexOrigin", },
+      );
 
-  //   bufferIndex =
-  //     try vkdAllocator.CreateBufferWithInitialDataWithOneTimeCommandBuffer(
-  //       commandPool.pool,
-  //       vk.BufferCreateInfo {
-  //         .flags = vk.BufferCreateFlags {},
-  //         .size = submesh.elementBufferSubregion.length,
-  //         .usage = vk.BufferUsageFlags {
-  //           .shader_device_address_bit                            = true,
-  //           .storage_buffer_bit                                   = true,
-  //           .acceleration_structure_build_input_read_only_bit_khr = true
-  //         },
-  //         .sharingMode = vk.SharingMode.exclusive,
-  //         .queueFamilyIndexCount = queueFamilyIndices.len,
-  //         .pQueueFamilyIndices = &queueFamilyIndices,
-  //       },
-  //       vk.MemoryPropertyFlags {},
-  //       scene.buffers.items[0].memory.items,
-  //     );
-  // }
+    bufferIndex =
+      try zvk.primitive.Buffer.initWithInitialDataWithOneTimeCommandBuffer(
+        vkAllocator,
+        commandPool.handle,
+        vk.BufferCreateInfo {
+          .flags = vk.BufferCreateFlags {},
+          .size = submesh.elementBufferSubregion.length,
+          .usage = vk.BufferUsageFlags {
+            .shader_device_address_bit                            = true,
+            .storage_buffer_bit                                   = true,
+            .acceleration_structure_build_input_read_only_bit_khr = true
+          },
+          .sharingMode = vk.SharingMode.exclusive,
+          .queueFamilyIndexCount = queueFamilyIndices.len,
+          .pQueueFamilyIndices = &queueFamilyIndices,
+        },
+        vk.MemoryPropertyFlags {},
+        scene.buffers.items[0].memory.items,
+        zvk.primitive.ObjectCreateInfo { .label = "IndexOrigin", },
+      );
+  }
+
+  // -- being render
 
 
   // record
@@ -483,24 +475,24 @@ pub fn main() !void {
     .pInheritanceInfo = null,
   };
 
-  try vkd.vkdd.beginCommandBuffer(commandBuffers.buffers.items[0], beginInfo);
+  try vkd.vkdd.beginCommandBuffer(commandBuffers.handles.items[0], beginInfo);
 
   vkd.vkdd.cmdBindPipeline(
-    commandBuffers.buffers.items[0],
-    vk.PipelineBindPoint.compute, raytracePipeline,
+    commandBuffers.handles.items[0],
+    vk.PipelineBindPoint.compute, raytracePipeline.handle,
   );
 
   vkd.vkdd.cmdBindDescriptorSets(
-    commandBuffers.buffers.items[0],
+    commandBuffers.handles.items[0],
     vk.PipelineBindPoint.compute,
-    pipelineLayout,
+    pipelineLayout.handle,
     0, // first set
-    1, ztd.PtrConstCast(descriptorSets.items),
+    1, ztd.PtrConstCast(descriptorSets.handles.items),
     0, undefined
   );
 
   vkd.vkdd.cmdDispatch(
-    commandBuffers.buffers.items[0],
+    commandBuffers.handles.items[0],
     (640 + workgroupWidth  - 1) / workgroupWidth,
     (480 + workgroupHeight - 1) / workgroupHeight,
     1
@@ -513,7 +505,7 @@ pub fn main() !void {
   };
 
   vkd.vkdd.cmdPipelineBarrier(
-    commandBuffers.buffers.items[0],
+    commandBuffers.handles.items[0],
     vk.PipelineStageFlags { .compute_shader_bit = true }, // src
     vk.PipelineStageFlags { .host_bit    = true }, // dst
     vk.DependencyFlags { },
@@ -521,7 +513,7 @@ pub fn main() !void {
     0, undefined, 0, undefined
   );
 
-  try vkd.vkdd.endCommandBuffer(commandBuffers.buffers.items[0]);
+  try vkd.vkdd.endCommandBuffer(commandBuffers.handles.items[0]);
 
   var submitInfo = vk.SubmitInfo {
     .waitSemaphoreCount = 0,
@@ -529,7 +521,7 @@ pub fn main() !void {
     .pWaitDstStageMask = undefined,
     .commandBufferCount = 1,
     .pCommandBuffers =
-      @ptrCast([*]const vk.CommandBuffer, &commandBuffers.buffers.items[0]),
+      @ptrCast([*]const vk.CommandBuffer, &commandBuffers.handles.items[0]),
     .signalSemaphoreCount = 0,
     .pSignalSemaphores = undefined,
   };
@@ -553,21 +545,7 @@ pub fn main() !void {
   try img.WriteImage(fdata[0..640*480*3], img.ImageType.rgb, "test.ppm", 640, 480);
   vkd.vkdd.unmapMemory(vkd.device, buffer.allocation);
 
-  // vk.RenderPass renderpass =
-  //   vkDevice.vkdd.createRenderPass2(
-  //     vkDevice.device
-  //   , vk.RenderPassCreateInfo2 {
-  //       .pNext = null
-  //     , .flags = vk.RenderPassCreateFlags.fromInt(0)
-  //     , .attachmentCount = 1
-  //     , .pAttachments = ..
-  //     , .subpassCount = 1
-  //     }
-  //   );
+  util.StringArena.freeArena();
 
-  // while (glfw.glfwWindowShouldClose(window) == 0) {
-    // glfw.glfwPollEvents();
-  // }
-
-  std.log.info("{}", .{"Exitting ztoadz!"});
+  log.info("{}", .{"Exitting ztoadz safely"});
 }

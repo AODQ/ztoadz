@@ -73,21 +73,6 @@ pub fn LoadScene(
           vertexAttributeBuffers
             [@enumToInt(VertexDescriptorAttributeType.origin)].items
         ;
-        std.log.info(
-          "{}+{} ({}) :: {}",
-          .{
-            idx, vertex, idx+vertex,
-            eidx,
-          }
-        );
-        std.log.info(
-          "    => <{}, {}, {}>",
-          .{
-            originAttr[eidx*3 + 0],
-            originAttr[eidx*3 + 1],
-            originAttr[eidx*3 + 2],
-          }
-        );
       }
     }
   }

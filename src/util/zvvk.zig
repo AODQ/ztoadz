@@ -42,6 +42,17 @@ pub const AllocatorDedicated = struct {
   samplerPool : SamplerPool,
   allocator : * std.mem.Allocator,
 
+  pub fn LabelObject(
+    self : @This(),
+    info : vk.DebugUtilsObjectNameInfoEXT,
+  ) void {
+    self.vkd.vkdd.setDebugUtilsObjectNameEXT(self.vkd.device, info)
+      catch |err| {
+        std.log.warning("Could not label debug object: {}", .{info});
+      }
+    ;
+  }
+
   pub fn init(
     vkd : * VulkanDeviceContext,
     allocator : * std.mem.Allocator
@@ -206,11 +217,11 @@ pub const AllocatorDedicated = struct {
   }
 
   pub fn CreateBufferWithInitialDataWithOneTimeCommandBuffer(
-    self : * @This(),
+    self        : * @This(),
     commandPool : vk.CommandPool,
-    info : vk.BufferCreateInfo,
-    memUsage : vk.MemoryPropertyFlags,
-    data : [] const u8,
+    info        : vk.BufferCreateInfo,
+    memUsage    : vk.MemoryPropertyFlags,
+    data        : [] const u8,
   ) !Buffer {
 
     assert(data.len != 0);
@@ -243,7 +254,7 @@ pub const AllocatorDedicated = struct {
 
     // copy data
     var finalBuffer =
-      try self.CreateBufferWithInitialData(
+      self.CreateBufferWithInitialData(
         commandBuffer.buffers.items[0],
         info,
         memUsage,
@@ -271,17 +282,6 @@ pub const AllocatorDedicated = struct {
     );
 
     try self.vkd.vkdd.queueWaitIdle(self.vkd.queueGTC.handle);
-
-    const nameInfo = vk.DebugMarkerObjectNameInfoEXT {
-      .objectType = vk.DebugReportObjectTypeEXT.buffer_ext,
-      .object = @bitCast(u64, finalBuffer.buffer),
-      .pObjectName = "FINAL BUFFAH!",
-    };
-    try self.vkd.vkdd.debugMarkerSetObjectNameEXT(
-      self.vkd.device,
-      nameInfo
-    );
-    // vk.PfnDebugMarkerSetObjectNameEXT(
 
     return finalBuffer;
   }
