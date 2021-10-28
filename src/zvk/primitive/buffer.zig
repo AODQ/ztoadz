@@ -60,7 +60,8 @@ pub const Buffer = struct {
   }
 
   pub fn deinit(self : @This()) void {
-    self.primitiveAllocator.destroyBuffer(self);
+    if (self.handle != .null_handle)
+      self.primitiveAllocator.destroyBuffer(self);
   }
 
   pub const StagingBufferInfo = struct {
@@ -228,5 +229,13 @@ pub const Buffer = struct {
     stagingBufferInfo.stagingBuffer.deinit();
 
     return stagingBufferInfo.finalBuffer;
+  }
+
+  pub fn DeviceAddress(self : @This()) vk.DeviceAddress {
+    var info = vk.BufferDeviceAddressInfo {
+      .buffer = self.handle,
+    };
+    const vkd = self.primitiveAllocator.vkd;
+    return vkd.vkdd.getBufferDeviceAddress(vkd.device, info);
   }
 };

@@ -39,7 +39,7 @@ pub fn info(
   comptime format : [] const u8,
   args : anytype,
 ) void {
-  std.log.info("[info] " ++ format, args);
+  std.log.info("[\x1B[34minfo\x1B[0m] " ++ format, args);
 }
 
 pub fn debug(

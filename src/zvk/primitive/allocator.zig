@@ -23,6 +23,11 @@ pub const Allocator = struct {
   ) zvk.primitive.Buffer,
   fnDestroyBuffer : fn(data : * c_void, zvk.primitive.Buffer) void,
 
+  fnCreateFence : fn(
+    data : * c_void, vk.FenceCreateInfo,
+  ) zvk.primitive.Fence,
+  fnDestroyFence : fn(data : * c_void, zvk.primitive.Fence) void,
+
   fnCreateShaderModule : fn(
     data : * c_void, vk.ShaderModuleCreateInfo,
   ) zvk.primitive.ShaderModule,
@@ -106,6 +111,19 @@ pub const Allocator = struct {
 
   pub fn destroyBuffer(self : @This(), buffer : zvk.primitive.Buffer) void {
     return self.fnDestroyBuffer(self.data, buffer);
+  }
+
+  pub fn createFence(
+    self : @This(),
+    info : vk.FenceCreateInfo,
+  ) zvk.primitive.Fence {
+    var ret = self.fnCreateFence(self.data, info);
+    ret.primitiveAllocator = self;
+    return ret;
+  }
+
+  pub fn destroyFence(self : @This(), buffer : zvk.primitive.Fence) void {
+    return self.fnDestroyFence(self.data, buffer);
   }
 
   pub fn createShaderModule(

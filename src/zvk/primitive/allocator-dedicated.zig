@@ -141,6 +141,31 @@ pub const AllocatorDedicated = struct {
     self.vkd.vkdd.freeMemory(self.vkd.device, buffer.allocation, null);
   }
 
+  pub fn createFence(
+    data : * c_void,
+    info : vk.FenceCreateInfo,
+  ) zvk.primitive.Fence {
+    var self = @ptrCast(* AllocatorDedicated, @alignCast(8, data));
+
+    var fence : zvk.primitive.Fence = undefined;
+    fence.handle =
+      self.vkd.vkdd.createFence(self.vkd.device, info, null)
+        catch |err| {
+          log.crit("Could not create fence: {}", .{err});
+          return zvk.primitive.Fence.nullify();
+        }
+    ;
+
+     return fence;
+  }
+
+  pub fn destroyFence(data : * c_void, fence : zvk.primitive.Fence,) void
+  {
+    var self = @ptrCast(* AllocatorDedicated, @alignCast(8, data));
+
+    self.vkd.vkdd.destroyFence(self.vkd.device, fence.handle, null);
+  }
+
   pub fn createShaderModule(
     data : * c_void,
     info : vk.ShaderModuleCreateInfo,
@@ -448,6 +473,8 @@ pub const AllocatorDedicated = struct {
       .vkd = vkd,
       .fnCreateBuffer               = createBuffer,
       .fnDestroyBuffer              = destroyBuffer,
+      .fnCreateFence                = createFence,
+      .fnDestroyFence               = destroyFence,
       .fnCreateShaderModule         = createShaderModule,
       .fnDestroyShaderModule        = destroyShaderModule,
       .fnCreateDescriptorSetLayout  = createDescriptorSetLayout,

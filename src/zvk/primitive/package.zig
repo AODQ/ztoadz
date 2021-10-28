@@ -1,11 +1,13 @@
-pub usingnamespace @import("../../zvk/primitive/allocator.zig");
+pub usingnamespace @import("../../zvk/primitive/acceleration.zig");
 pub usingnamespace @import("../../zvk/primitive/allocator-dedicated.zig");
+pub usingnamespace @import("../../zvk/primitive/allocator.zig");
 pub usingnamespace @import("../../zvk/primitive/buffer.zig");
 pub usingnamespace @import("../../zvk/primitive/command-buffer.zig");
 pub usingnamespace @import("../../zvk/primitive/command-pool.zig");
+pub usingnamespace @import("../../zvk/primitive/descriptor-pool.zig");
+pub usingnamespace @import("../../zvk/primitive/descriptor-set-layout.zig");
+pub usingnamespace @import("../../zvk/primitive/descriptor-set.zig");
+pub usingnamespace @import("../../zvk/primitive/fence.zig");
 pub usingnamespace @import("../../zvk/primitive/pipeline-compute.zig");
 pub usingnamespace @import("../../zvk/primitive/pipeline-layout.zig");
-pub usingnamespace @import("../../zvk/primitive/descriptor-set.zig");
-pub usingnamespace @import("../../zvk/primitive/descriptor-set-layout.zig");
-pub usingnamespace @import("../../zvk/primitive/descriptor-pool.zig");
 pub usingnamespace @import("../../zvk/primitive/shader-module.zig");

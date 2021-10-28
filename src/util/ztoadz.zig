@@ -123,7 +123,7 @@ pub const VulkanSwapchainImage = struct {
             .r = .identity, .g = .identity, .b = .identity, .a = .identity
           }
         , .subresourceRange = .{
-            .aspectMask = .{.color_bit = true}
+            .aspectMask = .{.colorBit = true}
           , .baseMipLevel = 0
           , .levelCount = 1
           , .baseArrayLayer = 0
@@ -152,7 +152,7 @@ pub const VulkanSwapchainImage = struct {
 
     const fenceFrame =
       try vkd.vkdd.createFence(
-        vkd.device, .{.flags = .{.signaled_bit = true}}, null
+        vkd.device, .{.flags = .{.signaledBit = true}}, null
       );
     errdefer vkd.vkdd.destroyFence(vkd.device, fenceFrame, null);
 
@@ -294,12 +294,12 @@ pub const VulkanSwapchain = struct {
       , .imageColorSpace = surfaceFormat.colorSpace
       , .imageExtent = actualExtent
       , .imageArrayLayers = 1
-      , .imageUsage = .{.color_attachment_bit = true, .transfer_dst_bit = true}
+      , .imageUsage = .{.colorAttachmentBit = true, .transferDstBit = true}
       , .imageSharingMode = if (concurrent) .concurrent else .exclusive
       , .queueFamilyIndexCount = queueFamilyIndices.len
       , .pQueueFamilyIndices = &queueFamilyIndices
       , .preTransform = capabilities.currentTransform
-      , .compositeAlpha = .{.opaque_bit_khr = true}
+      , .compositeAlpha = .{.opaqueBitKhr = true}
       , .presentMode = presentMode
       , .clipped = vk.TRUE
       , .oldSwapchain = oldSwapchainHandle
@@ -412,7 +412,7 @@ pub const VulkanSwapchain = struct {
     );
 
     // submit command buffer
-    const waitStage = [_]vk.PipelineStageFlags {.{.top_of_pipe_bit = true}};
+    const waitStage = [_]vk.PipelineStageFlags {.{.topOfPipeBit = true}};
     try vkd.queueSubmit(
       vkd.queueGTC.handle
     , 1
@@ -560,8 +560,8 @@ pub const VulkanDeviceContext = struct {
     self.physicalDevice = physicalDevice;
 
     // get physical device properties
-    vki.vkGetPhysicalDeviceProperties(
-      self.physicalDevice, &self.physicalDeviceProperties
+    self.physicalDeviceProperties = (
+      vki.getPhysicalDeviceProperties(self.physicalDevice)
     );
 
     // get physical device properties
@@ -575,18 +575,18 @@ pub const VulkanDeviceContext = struct {
     zeroInitInPlace(&self.physicalDevicePropertiesMeshShader);
     // TODO this didn't work, have to manually set sType
     self.physicalDeviceProperties11.sType =
-      vk.StructureType.physical_device_vulkan_1_1_properties;
+      vk.StructureType.physicalDeviceVulkan11Properties;
     self.physicalDeviceProperties12.sType =
-      vk.StructureType.physical_device_vulkan_1_2_properties;
+      vk.StructureType.physicalDeviceVulkan12Properties;
     self.physicalDevicePropertiesMeshShader.sType =
-      vk.StructureType.physical_device_mesh_shader_properties_nv;
+      vk.StructureType.physicalDeviceMeshShaderPropertiesNV;
 
     self.physicalDeviceProperties11.pNext = &self.physicalDeviceProperties12;
     self.physicalDeviceProperties12.pNext =
       &self.physicalDevicePropertiesMeshShader;
     self.physicalDevicePropertiesMeshShader.pNext = null;
 
-    vki.vkGetPhysicalDeviceProperties2(
+    vki.getPhysicalDeviceProperties2(
       self.physicalDevice, &physicalDeviceProperties2
     );
 
@@ -605,25 +605,26 @@ pub const VulkanDeviceContext = struct {
       ;
       zeroInitInPlace(&self.physicalDeviceMemoryBudgetProperties);
 
-      physicalDeviceMemoryProperties.sType =
-        vk.StructureType.physical_device_memory_properties_2
-      ;
+      physicalDeviceMemoryProperties.sType = (
+        vk.StructureType.physicalDeviceMemoryProperties2
+      );
 
-      self.physicalDeviceMemoryBudgetProperties.sType =
-        vk.StructureType.physical_device_memory_budget_properties_ext
-      ;
+      self.physicalDeviceMemoryBudgetProperties.sType = (
+        vk.StructureType.physicalDeviceMemoryBudgetPropertiesEXT
+      );
 
       self.physicalDeviceMemoryBudgetProperties.pNext = null;
-      physicalDeviceMemoryProperties.pNext =
+      physicalDeviceMemoryProperties.pNext = (
         &self.physicalDeviceMemoryBudgetProperties
-      ;
+      );
 
-      vki.vkGetPhysicalDeviceMemoryProperties2(
+      vki.getPhysicalDeviceMemoryProperties2(
         self.physicalDevice, &physicalDeviceMemoryProperties
       );
 
-      self.physicalDeviceMemoryProperties =
-        physicalDeviceMemoryProperties.memoryProperties;
+      self.physicalDeviceMemoryProperties = (
+        physicalDeviceMemoryProperties.memoryProperties
+      );
     }
 
     // get queue family properties
@@ -638,7 +639,7 @@ pub const VulkanDeviceContext = struct {
 
     try self.queueFamilyProperties.resize(queueFamilyPropertyLen);
 
-    vki.vkGetPhysicalDeviceQueueFamilyProperties(
+    vki.getPhysicalDeviceQueueFamilyProperties(
       self.physicalDevice
     , &queueFamilyPropertyLen
     , self.queueFamilyProperties.items.ptr
@@ -651,26 +652,26 @@ pub const VulkanDeviceContext = struct {
 
       // vk_logger.QueueFamilyProperties(properties, i);
 
-      if (properties.queueFlags.contains(.{.graphics_bit = true})) {
+      if (properties.queueFlags.contains(.{.graphicsBit = true})) {
         self.deviceQueue.graphicsIdx = family;
       }
 
-      if (properties.queueFlags.contains(.{.compute_bit = true})) {
+      if (properties.queueFlags.contains(.{.computeBit = true})) {
         self.deviceQueue.computeIdx = family;
       }
 
       // TODO check for getPhysicalDeviceSurfaceSupportKHR
-      // if (properties.queueFlags.contains(.{.graphics_bit = true})) {
+      // if (properties.queueFlags.contains(.{.graphicsBit = true})) {
       //   (try self.deviceQueue.presentIndices.addOne()).* = family;
       // }
 
-      if (properties.queueFlags.contains(.{.transfer_bit = true})) {
+      if (properties.queueFlags.contains(.{.transferBit = true})) {
         self.deviceQueue.transferIdx = family;
       }
 
       if (
         properties.queueFlags.contains(
-          .{.transfer_bit = true, .compute_bit = true, .graphics_bit = true})
+          .{.transferBit = true, .computeBit = true, .graphicsBit = true})
       ) {
         self.deviceQueue.gtcIdx = family;
       }
@@ -701,6 +702,7 @@ pub const VulkanDeviceContext = struct {
 
     const queueCount = 3;
 
+    // buffer device address feature -
     var featureBufferDeviceAddress :
       vk.PhysicalDeviceBufferDeviceAddressFeatures = undefined;
 
@@ -713,7 +715,7 @@ pub const VulkanDeviceContext = struct {
     zeroInitInPlace(&features.features);
 
     featureBufferDeviceAddress.sType =
-      .physical_device_buffer_device_address_features;
+      .physicalDeviceBufferDeviceAddressFeatures;
 
     vki.getPhysicalDeviceFeatures2(
       self.physicalDevice,
@@ -725,6 +727,47 @@ pub const VulkanDeviceContext = struct {
     featureBufferDeviceAddress.bufferDeviceAddress              = vk.TRUE;
     featureBufferDeviceAddress.bufferDeviceAddressMultiDevice   = vk.FALSE;
     featureBufferDeviceAddress.bufferDeviceAddressCaptureReplay = vk.FALSE;
+
+    // ray query feature -
+    // var featureRayQuery = vk.PhysicalDeviceRayQueryFeaturesKHR {
+    //   .rayQuery = vk.TRUE,
+    // };
+
+    // featureBufferDeviceAddress.pNext = &featureRayQuery;
+
+    // raytracing -
+    var featureRaytracing = vk.PhysicalDeviceRayTracingPipelineFeaturesKHR {
+      .rayTracingPipeline = vk.TRUE,
+      .rayTracingPipelineShaderGroupHandleCaptureReplay = vk.FALSE, // TODO
+      .rayTracingPipelineShaderGroupHandleCaptureReplayMixed = vk.FALSE,
+      .rayTracingPipelineTraceRaysIndirect = vk.TRUE,
+      .rayTraversalPrimitiveCulling = vk.TRUE,
+    };
+
+    featureBufferDeviceAddress.pNext = &featureRaytracing;
+
+    // acceleration structure feature -
+    var featureAccelerationStructure =
+      vk.PhysicalDeviceAccelerationStructureFeaturesKHR {
+        .accelerationStructure = vk.TRUE,
+        .accelerationStructureCaptureReplay = vk.FALSE, // TODO for now false
+        .accelerationStructureIndirectBuild = vk.FALSE,
+        .accelerationStructureHostCommands = vk.FALSE,
+        .descriptorBindingAccelerationStructureUpdateAfterBind = vk.FALSE,
+      }
+    ;
+
+    featureRaytracing.pNext = &featureAccelerationStructure;
+
+    // host query reset feature -
+    var hostQueryResetFeature =
+      vk.PhysicalDeviceHostQueryResetFeatures {
+        .hostQueryReset = vk.TRUE,
+      }
+    ;
+
+    featureAccelerationStructure.pNext = &hostQueryResetFeature;
+
 
     self.device = try vki.createDevice(
       self.physicalDevice
@@ -745,7 +788,7 @@ pub const VulkanDeviceContext = struct {
 
     self.vkdd = try
       vk_dispatcher.VulkanDeviceDispatch.load(
-        self.device, vki.vkGetDeviceProcAddr
+        self.device, vki.getDeviceProcAddr
       );
 
     errdefer self.vkdd.destroyDevice(self.device, null);
@@ -856,18 +899,18 @@ pub const VulkanAppContext = struct {
   ) !vk.Instance {
     const appInfo = vk.ApplicationInfo {
       .pApplicationName = "zTOADz"
-    , .applicationVersion = vk.makeVersion(1, 0, 0)
+    , .applicationVersion = vk.makeApiVersion(1, 0, 0, 0)
     , .pEngineName = "zTOADz"
-    , .engineVersion = vk.makeVersion(1, 0, 0)
+    , .engineVersion = vk.makeApiVersion(1, 0, 0, 0)
     , .apiVersion = vk.API_VERSION_1_2
     , .pNext = null
     };
 
     const validatedFeatures = [_] vk.ValidationFeatureEnableEXT {
-      vk.ValidationFeatureEnableEXT.gpu_assisted_ext
-    , vk.ValidationFeatureEnableEXT.gpu_assisted_reserve_binding_slot_ext
-    , vk.ValidationFeatureEnableEXT.best_practices_ext
-    , vk.ValidationFeatureEnableEXT.debug_printf_ext
+      vk.ValidationFeatureEnableEXT.gpuAssistedEXT
+    , vk.ValidationFeatureEnableEXT.gpuAssistedReserveBindingSlotEXT
+    , vk.ValidationFeatureEnableEXT.bestPracticesEXT
+    , vk.ValidationFeatureEnableEXT.debugPrintfEXT
     // , vk.ValidationFeatureEnableEXT.synchronization_validation_ext
     };
 
