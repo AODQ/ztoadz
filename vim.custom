@@ -1,5 +1,5 @@
 function! MakeprgRelease()
-  let &makeprg = 'zig build'
+  let &makeprg = 'zig test src/mtr/tests.zig'
   make
 endfunction
 
