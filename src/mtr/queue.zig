@@ -30,7 +30,6 @@ pub const WorkType = packed struct {
 //   queues can work independently of each other with minimal interaction.
 //   commands are buffered into a queue and then acted on when specified
 pub const Primitive = struct {
-  commandActions : std.ArrayList(mtr.command.Action),
   workType : mtr.queue.WorkType,
   contextIdx : mtr.queue.Idx,
 };

@@ -14,16 +14,6 @@ pub const RegionConstructInfo = struct {
   length : u64,
 };
 
-pub const BackingMemoryTypeTag = enum {
-  cpu,
-  gpu
-};
-
-pub const BackingMemory = union(mtr.heap.BackingMemoryTypeTag) {
-  cpu : [] u8,
-  gpu : void, // unimplemented
-};
-
 // Describes the visibility of the heap between host and device
 pub const Visibility = enum {
   deviceOnly,
@@ -35,7 +25,6 @@ pub const Visibility = enum {
 //   in the library is accounted for & can be manually managed by the user.
 //   Multiple primitives can be allocated inside a single allocation
 pub const Primitive = struct {
-  underlyingMemory : mtr.heap.BackingMemory,
   length : u64,
   visibility : mtr.heap.Visibility,
   contextIdx : mtr.heap.Idx,
@@ -55,4 +44,5 @@ pub const Region = struct {
   allocatedHeap : mtr.heap.Idx,
   offset : u64, length : u64,
   contextIdx : mtr.heap.RegionIdx,
+  visibility : mtr.heap.Visibility, // must be same as Primitive, for quick ref
 };

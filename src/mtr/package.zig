@@ -70,6 +70,8 @@
 // to import use
 // const mtr = @import("package.zig");
 
+pub const backend    = @import("backend/package.zig");
+
 pub const buffer     = @import("buffer.zig");
 pub const command    = @import("commands.zig");
 pub const context    = @import("context.zig");

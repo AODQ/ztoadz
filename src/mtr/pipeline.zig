@@ -10,14 +10,14 @@ pub const Layout = struct {
   descriptors : std.AutoHashMap(u64, mtr.descriptor.Type),
   pushConstants : std.ArrayList(mtr.descriptor.PushConstantRange),
 
-  pub fn init(a : * std.mem.Allocator) void {
+  pub fn init(a : * std.mem.Allocator) @This() {
     return .{
       .descriptors = std.AutoHashMap(u64, mtr.descriptor.Type).init(a),
       .pushConstants = std.ArrayList(mtr.descriptor.PushConstantRange).init(a),
     };
   }
 
-  pub fn deinit(self : @This()) {
+  pub fn deinit(self : @This()) void {
     self.descriptors.deinit();
     self.pushConstants.deinit();
   }
@@ -33,8 +33,8 @@ pub const ConstructInfo = struct {
 };
 
 
-pub const RasterizePrimitive {
-  layout : Layout,
+pub const RasterizePrimitive = struct {
+  layout : mtr.pipeline.Layout,
   depthTestEnable : bool,
   depthWriteEnable : bool,
 };

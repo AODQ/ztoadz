@@ -10,7 +10,7 @@ pub const Type = enum {
   image,
 };
 
-pub const PushConstantRange {
+pub const PushConstantRange = struct {
   offset : u32,
   length : u32, // must be a multiple of 4
 };

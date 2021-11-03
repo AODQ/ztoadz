@@ -26,6 +26,8 @@ pub fn build(builder: * std.build.Builder) !void {
   const mode = builder.standardReleaseOptions();
   const exe = builder.addExecutable("ztoadz", "src/main.zig");
   exe.setBuildMode(mode);
+  exe.linkSystemLibrary("c");
+  exe.linkSystemLibrary("OpenCL");
   builder.default_step.dependOn(&exe.step);
   exe.install();
 }
