@@ -1,12 +1,12 @@
-const glfw    = @import("third-party/glfw.zig");
+// const glfw    = @import("third-party/glfw.zig");
 const img     = @import("io/img.zig");
 const log     = @import("log.zig");
 const modelio = @import("modelio/package.zig");
 const util    = @import("util/package.zig");
-const vk      = @import("third-party/vulkan.zig");
-const ztd     = @import("util/ztoadz.zig");
-const zvk     = @import("zvk/package.zig");
-const zvvk    = @import("util/zvvk.zig");
+// const vk      = @import("third-party/vulkan.zig");
+// const ztd     = @import("util/ztoadz.zig");
+// const zvk     = @import("zvk/package.zig");
+// const zvvk    = @import("util/zvvk.zig");
 const mtr     = @import("mtr/package.zig");
 
 const std    = @import("std");

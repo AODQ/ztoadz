@@ -20,25 +20,25 @@ pub const Buffer = struct {
 };
 
 pub const Scene = struct {
-  nodes : std.ArrayList(Node),
-  meshes : std.ArrayList(Mesh),
-  buffers : std.ArrayList(Buffer),
+  // nodes : std.ArrayList(Node),
+  // meshes : std.ArrayList(Mesh),
+  // buffers : std.ArrayList(Buffer),
 
-  pub fn init(allocator : * std.mem.Allocator) Scene {
-    return Scene {
-      .nodes = std.ArrayList(Node).init(allocator),
-      .meshes = std.ArrayList(Mesh).init(allocator),
-      .buffers = std.ArrayList(Buffer).init(allocator),
-    };
-  }
+  // pub fn init(allocator : * std.mem.Allocator) Scene {
+  //   return Scene {
+  //     .nodes = std.ArrayList(Node).init(allocator),
+  //     .meshes = std.ArrayList(Mesh).init(allocator),
+  //     .buffers = std.ArrayList(Buffer).init(allocator),
+  //   };
+  // }
 
-  pub fn deinit(self : @This()) void {
-    self.nodes.deinit();
+  // pub fn deinit(self : @This()) void {
+  //   self.nodes.deinit();
 
-    for (self.meshes.items) |m| { m.deinit(); }
-    self.meshes.deinit();
+  //   for (self.meshes.items) |m| { m.deinit(); }
+  //   self.meshes.deinit();
 
-    for (self.buffers.items) |b| { b.memory.deinit(); }
-    self.buffers.deinit();
-  }
+  //   for (self.buffers.items) |b| { b.memory.deinit(); }
+  //   self.buffers.deinit();
+  // }
 };

@@ -2,6 +2,13 @@ const log = @import("log.zig");
 const mtr = @import("package.zig");
 const std = @import("std");
 
+fn compareValues(failStr : anytype, actual : u8, expected : u8,) void {
+  _ = std.testing.expect(actual == expected) catch {};
+  if (actual != expected) {
+    std.log.err("failure '{s}': {} == {}", .{failStr, actual, expected});
+  }
+}
+
 test "buffer mapping + transfer" {
   std.testing.log_level = .debug;
   // tests command 'transfer memory'
@@ -179,164 +186,185 @@ test "buffer mapping + transfer" {
   mtrCtx.queueFlush(queue);
 }
 
-// fn testImageUpload(
-//   mtrCtx : * mtr.Context,
-//   queue : mtr.queue.Idx,
-//   bufferRead : mtr.buffer.Idx,
-//   ci : mtr.image.ConstructInfo,
-// ) void {
-//   const testImage = mtrCtx.constructImage(ci)
-//     catch unreachable;
+fn testImageUpload(
+  mtrCtx : * mtr.Context,
+  queue : mtr.queue.Idx,
+  commandBuffer : mtr.command.Buffer,
+  bufferRead : mtr.buffer.Idx,
+  ci : mtr.image.ConstructInfo,
+) void {
+  const testImage = mtrCtx.constructImage(ci)
+    catch unreachable;
 
-//   const rgbaClearValue = [_] f32 { 0.5, 0.75, 0.2, 1.0 };
+  const rgbaClearValue = [_] f32 { 0.5, 0.75, 0.2, 1.0 };
 
-//   mtrCtx.enqueueCommand(
-//     queue,
-//     mtr.command.UploadTexelToImageMemory {
-//       .image = testImage,
-//       .rgba = rgbaClearValue,
-//     },
-//   ) catch unreachable;
 
-//   mtrCtx.enqueueCommand(
-//     queue,
-//     mtr.command.TransferImageToBuffer {
-//       .imageSrc = testImage,
-//       .bufferDst = bufferRead,
-//     },
-//   ) catch unreachable;
+  var mappedMemory : ? [*] u8 = null;
+  {
+    mtrCtx.beginCommandBufferWriting(commandBuffer);
+    defer mtrCtx.endCommandBufferWriting();
 
-//   var mappedMemory : ? [*] u8 = null;
-//   mtrCtx.enqueueCommand(
-//     queue,
-//     mtr.command.MapMemory {
-//       .buffer = bufferRead,
-//       .mapping = .Read,
-//       .offset = 0,
-//       .length = 12,
-//       .memory = &mappedMemory
-//     },
-//   ) catch unreachable;
+    mtrCtx.enqueueToCommandBuffer(
+      mtr.command.UploadTexelToImageMemory {
+        .image = testImage,
+        .rgba = rgbaClearValue,
+      },
+    ) catch unreachable;
 
-//   mtrCtx.queueFlush(queue);
-//   std.debug.assert(mappedMemory != null);
+    mtrCtx.enqueueToCommandBuffer(
+      mtr.command.TransferImageToBuffer {
+        .imageSrc = testImage,
+        .bufferDst = bufferRead,
+      },
+    ) catch unreachable;
+  }
 
-//   std.time.sleep(0);
+  mtrCtx.submitCommandBufferToQueue(queue, commandBuffer);
+  mtrCtx.queueFlush(queue);
 
-//   std.log.info("have : {}", .{mappedMemory.?[0]} );
+  {
+    mtrCtx.beginCommandBufferWriting(commandBuffer);
+    defer mtrCtx.endCommandBufferWriting();
 
-//   std.testing.expect(mappedMemory.?[0] == 128) catch unreachable;
-//   std.testing.expect(mappedMemory.?[1] == 255*0.75) catch unreachable;
-//   std.testing.expect(mappedMemory.?[2] == 255*0.2) catch unreachable;
-//   std.testing.expect(mappedMemory.?[3] == 255) catch unreachable;
+    mtrCtx.enqueueToCommandBuffer(
+      mtr.command.MapMemory {
+        .buffer = bufferRead,
+        .mapping = .Read,
+        .offset = 0,
+        .length = 12,
+        .memory = &mappedMemory
+      },
+    ) catch unreachable;
+  }
 
-//   // const imageMemory = (
-//   //   mtrCtx
-//   //     .renderingContext.clRasterizer
-//   //     .getMemoryByImageIdx(mtrCtx.*, testImage)
-//   // );
+  mtrCtx.submitCommandBufferToQueue(queue, commandBuffer);
+  mtrCtx.queueFlush(queue);
 
-//   // for (imageMemory) |m, it| {
-//   //   if (m == rgbaClearValue[it%ci.channels.channelLength()]) {
-//   //     continue;
-//   //   }
+  std.debug.assert(mappedMemory != null);
 
-//   //   log.err(
-//   //     "have {}, expected {} [test {}]",
-//   //     .{m, rgbaClearValue[it%ci.channels.channelLength()], ci}
-//   //   );
-//   //   unreachable;
-//   // }
-// }
+  std.time.sleep(0);
 
-// test "image upload - channels" {
-//   // tests channels component of 'command.UploadTexelToImageMemory'
-//   std.testing.log_level = .debug;
+  compareValues("0", mappedMemory.?[0], 127);
+  compareValues("1", mappedMemory.?[1], @floatToInt(u8, 255.0*0.75));
+  compareValues("2", mappedMemory.?[2], @floatToInt(u8, 255.0*0.2));
+  compareValues("3", mappedMemory.?[3], 255);
+}
 
-//   var debugAllocator =
-//     std.heap.GeneralPurposeAllocator(
-//       .{
-//         .enable_memory_limit = true,
-//         .safety = true,
-//       }
-//     ){};
-//   defer {
-//     const leaked = debugAllocator.deinit();
-//     if (leaked) log.info("{s}", .{"leaked memory"});
-//   }
+test "image upload - channels" {
+  // tests channels component of 'command.UploadTexelToImageMemory'
+  std.testing.log_level = .debug;
 
-//   var mtrCtx = (
-//     mtr.Context.init(
-//       &debugAllocator.allocator,
-//       mtr.backend.RenderingContextType.clRasterizer,
-//       mtr.backend.RenderingOptimizationLevel.Debug,
-//     )
-//   );
-//   defer mtrCtx.deinit();
+  var debugAllocator =
+    std.heap.GeneralPurposeAllocator(
+      .{
+        .enable_memory_limit = true,
+        .safety = true,
+      }
+    ){};
+  defer {
+    const leaked = debugAllocator.deinit();
+    if (leaked) log.info("{s}", .{"leaked memory"});
+  }
 
-//   const queue : mtr.queue.Idx = (
-//     try mtrCtx.constructQueue(.{
-//       .workType = mtr.queue.WorkType{.transfer = true, .render = true},
-//     })
-//   );
+  var mtrCtx = (
+    mtr.Context.init(
+      &debugAllocator.allocator,
+      mtr.backend.RenderingContextType.clRasterizer,
+      mtr.backend.RenderingOptimizationLevel.Debug,
+    )
+  );
+  defer mtrCtx.deinit();
 
-//   const heap : mtr.heap.Idx = (
-//     try mtrCtx.constructHeap(.{
-//       .visibility = mtr.heap.Visibility.hostVisible,
-//       .length = 1024*1024*50, // 50 MB
-//     })
-//   );
+  const queue : mtr.queue.Idx = (
+    try mtrCtx.constructQueue(.{
+      .workType = mtr.queue.WorkType{.transfer = true, .render = true},
+    })
+  );
 
-//   const heapRegion : mtr.heap.RegionIdx = (
-//     try mtrCtx.constructHeapRegion(.{
-//       .allocatedHeap = heap,
-//       .length = @sizeOf(u8)*32*32,
-//     })
-//   );
+  const commandPoolScratch : mtr.command.PoolIdx = (
+    try mtrCtx.constructCommandPool(.{
+      .flags = .{ .transientBit = true, .resetCommandBuffer = true },
+    })
+  );
 
-//   const testBufferRead : mtr.buffer.Idx = (
-//     try mtrCtx.constructBuffer(.{
-//       .allocatedHeapRegion = heapRegion,
-//       .offset = 0,
-//       .length = 12,
-//       .usage = mtr.buffer.Usage{ },
-//       .queueSharing = mtr.queue.SharingUsage.exclusive,
-//     })
-//   );
+  const commandBufferScratch : mtr.command.Buffer = (
+    try mtrCtx.constructCommandBuffer(.{
+      .commandPool = commandPoolScratch,
+    })
+  );
 
-//   const channels = [_] mtr.image.Channel {
-//     // mtr.image.Channel.R, mtr.image.Channel.RGB, mtr.image.Channel.RGBA
-//     mtr.image.Channel.RGBA
-//   };
+  const heap : mtr.heap.Idx = (
+    try mtrCtx.constructHeap(.{
+      .visibility = mtr.heap.Visibility.hostVisible,
+      .length = 1024*1024*50, // 50 MB
+    })
+  );
 
-//   // const widths  = [_] u64 { 1, 2, 4 };
-//   // const heights = [_] u64 { 1, 2, 4 };
-//   // const depths  = [_] u64 { 1, 2, 4, 8, 16, 32, 128, };
-//   const widths  = [_] u64 { 4 };
-//   const heights = [_] u64 { 4 };
+  const heapRegion : mtr.heap.RegionIdx = (
+    try mtrCtx.constructHeapRegion(.{
+      .allocatedHeap = heap,
+      .length = @sizeOf(u8)*32*32,
+    })
+  );
 
-//   for (widths) |width| {
-//   for (heights) |height| {
-//   for (channels) |channel| {
-//     testImageUpload(
-//       &mtrCtx,
-//       queue,
-//       testBufferRead,
-//       .{
-//         .allocatedHeapRegion = heapRegion,
-//         .offset = 0,
-//         .width = width, .height = height, .depth = 1,
-//         .samplesPerTexel = mtr.image.Sample.s1,
-//         .arrayLayers = 1,
-//         .mipmapLevels = 1,
-//         .byteFormat = mtr.image.ByteFormat.uint8,
-//         .channels = channel,
-//         .normalized = true,
-//         .queueSharing = mtr.queue.SharingUsage.exclusive,
-//       },
-//     );
-//   }}}
-// }
+  const testBufferRead : mtr.buffer.Idx = (
+    try mtrCtx.constructBuffer(.{
+      .allocatedHeapRegion = heapRegion,
+      .offset = 0,
+      .length = 12,
+      .usage = mtr.buffer.Usage{ },
+      .queueSharing = mtr.queue.SharingUsage.exclusive,
+    })
+  );
+
+  const heapImage : mtr.heap.Idx = (
+    try mtrCtx.constructHeap(.{
+      .visibility = mtr.heap.Visibility.deviceOnly,
+      .length = 1024*1024*50, // 50 MB
+    })
+  );
+
+  const heapRegionImage : mtr.heap.RegionIdx = (
+    try mtrCtx.constructHeapRegion(.{
+      .allocatedHeap = heapImage,
+      .length = @sizeOf(u8)*32*32,
+    })
+  );
+
+  // const widths  = [_] u64 { 1, 2, 4 };
+  // const heights = [_] u64 { 1, 2, 4 };
+  // const depths  = [_] u64 { 1, 2, 4, 8, 16, 32, 128, };
+  const widths  = [_] u64 { 4 };
+  const heights = [_] u64 { 4 };
+  const channels = [_] mtr.image.Channel {
+    // mtr.image.Channel.R, mtr.image.Channel.RGB, mtr.image.Channel.RGBA
+    mtr.image.Channel.RGBA
+  };
+
+
+  for (widths) |width| {
+  for (heights) |height| {
+  for (channels) |channel| {
+    testImageUpload(
+      &mtrCtx,
+      queue,
+      commandBufferScratch,
+      testBufferRead,
+      .{
+        .allocatedHeapRegion = heapRegionImage,
+        .offset = 0,
+        .width = width, .height = height, .depth = 1,
+        .samplesPerTexel = mtr.image.Sample.s1,
+        .arrayLayers = 1,
+        .mipmapLevels = 1,
+        .byteFormat = mtr.image.ByteFormat.uint8,
+        .channels = channel,
+        .normalized = true,
+        .queueSharing = mtr.queue.SharingUsage.exclusive,
+      },
+    );
+  }}}
+}
 
 test "pipeline - triangle" {
   // rasterizes a simple triangle

@@ -270,7 +270,7 @@ pub const Rasterizer = struct {
 
     var programStr = (
       \\ __kernel void uploadTexelToImageMemory(
-      \\   uchar * image,
+      \\   __global uchar * image,
       \\   float4 texelValue,
       \\   uint width,
       \\   uint height,
@@ -280,21 +280,20 @@ pub const Rasterizer = struct {
       \\   uint y = globalId % height;
       \\   uint z = globalId / height;
       \\   // the kernel fills out an entire row
-      \\   image[0] = 128;
-      // \\   for (uint x = 0; x < width; ++ x) {
-      // \\     image[(z*(width*height) + y*width + x)*4 + 0] = (
-      // \\       (uchar)(texelValue.x * 255.0f)
-      // \\     );
-      // \\     image[(z*(width*height) + y*width + x)*4 + 1] = (
-      // \\       (uchar)(texelValue.y * 255.0f)
-      // \\     );
-      // \\     image[(z*(width*height) + y*width + x)*4 + 2] = (
-      // \\       (uchar)(texelValue.z * 255.0f)
-      // \\     );
-      // \\     image[(z*(width*height) + y*width + x)*4 + 3] = (
-      // \\       (uchar)(texelValue.w * 255.0f)
-      // \\     );
-      // \\   }
+      \\   for (uint x = 0; x < width; ++ x) {
+      \\     image[(z*(width*height) + y*width + x)*4 + 0] = (
+      \\       (uchar)(texelValue.x * 255.0f)
+      \\     );
+      \\     image[(z*(width*height) + y*width + x)*4 + 1] = (
+      \\       (uchar)(texelValue.y * 255.0f)
+      \\     );
+      \\     image[(z*(width*height) + y*width + x)*4 + 2] = (
+      \\       (uchar)(texelValue.z * 255.0f)
+      \\     );
+      \\     image[(z*(width*height) + y*width + x)*4 + 3] = (
+      \\       (uchar)(texelValue.w * 255.0f)
+      \\     );
+      \\   }
       \\ }
     );
 
@@ -666,10 +665,11 @@ pub const Rasterizer = struct {
             c.clEnqueueNDRangeKernel(
               clQueue.*,
               self.uploadTexelToImageMemoryKernel,
-              1, null,
-              &globalLength,
+              1, // work dimensions
+              null, // work offset
+              &globalLength, // work size
               null, // local length
-              0, null, null,
+              0, null, null, // events
             )
           );
         },

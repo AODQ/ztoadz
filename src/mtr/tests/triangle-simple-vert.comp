@@ -1,0 +1,19 @@
+#version 450
+
+layout (binding = 0, std430) readonly buffer InputSBO {
+  vec4[3] origins;
+} inputSbo;
+
+layout (binding = 0, std430) writeonly buffer OutputSBO {
+  vec4[3] origins;
+} outputSBO;
+
+void Entry(
+  uint entryId
+) {
+  outputSBO.origins[entryId] = inputSbo.origins[entryId];
+}
+
+void main() {
+  Entry(gl_GlobalInvocationID.x);
+}
