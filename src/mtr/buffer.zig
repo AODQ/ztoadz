@@ -23,8 +23,6 @@ pub const Usage = packed struct {
   bufferUniform : bool = false,
   bufferStorage : bool = false,
   bufferAccelerationStructure : bool = false,
-
-  queue : bool = false,
 };
 
 // Any piece of information that exists as an array of elements must be
@@ -39,6 +37,27 @@ pub const Primitive = struct {
   usage : mtr.buffer.Usage,
   queueSharing : mtr.queue.SharingUsage,
   contextIdx : mtr.buffer.Idx,
+
+  pub fn jsonStringify(
+    self : @This(),
+    options : std.json.StringifyOptions,
+    outStream : anytype
+  ) @TypeOf(outStream).Error ! void {
+    try outStream.writeByte('{');
+
+    const structInfo = @typeInfo(@This()).Struct;
+
+    inline for (structInfo.fields) |Field| {
+      try mtr.util.json.stringifyVariable(
+        Field.name, @field(self, Field.name), options, outStream
+      );
+      try outStream.writeByte(',');
+    }
+
+    try mtr.Context.dumpBufferToWriter(self.contextIdx, outStream);
+
+    try outStream.writeByte('}');
+  }
 };
 
 // a view into a buffer

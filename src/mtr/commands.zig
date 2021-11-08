@@ -11,7 +11,8 @@ pub const ActionType = enum {
   transferMemory,
   transferImageToBuffer,
   uploadTexelToImageMemory,
-  invalid,
+
+  pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
 };
 
 pub const MappingError = error {
@@ -22,6 +23,8 @@ pub const MappingError = error {
 
 pub const MappingType = enum {
   Write, Read,
+
+  pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
 };
 
 // uploads memory from the host to the device at a specified hostVisible buffer
@@ -32,13 +35,41 @@ pub const MapMemory = struct {
   mapping : MappingType, // redundant, this must match Heap visibility
   buffer : mtr.buffer.Idx,
   offset : u64 = 0, length : u64 = 0, // if length is 0, assume entire buffer
-  memory : * ? [*] u8
+  memory : * ? [*] u8,
+
+  pub fn jsonStringify(
+    self : @This(),
+    options : std.json.StringifyOptions,
+    outStream : anytype
+  ) @TypeOf(outStream).Error ! void {
+    try mtr.util.json.stringifyTypedUnionMember(
+      self,
+      "mapMemory",
+      * ? [*] u8,
+      options,
+      outStream,
+    );
+  }
 };
 
 pub const UnmapMemory = struct {
   actionType : mtr.command.ActionType = .unmapMemory,
   buffer : mtr.buffer.Idx,
-  memory : [*] u8
+  memory : [*] u8,
+
+  pub fn jsonStringify(
+    self : @This(),
+    options : std.json.StringifyOptions,
+    outStream : anytype
+  ) @TypeOf(outStream).Error ! void {
+    try mtr.util.json.stringifyTypedUnionMember(
+      self,
+      "unmapMemory",
+      [*] u8,
+      options,
+      outStream,
+    );
+  }
 };
 
 // transfers memory from one buffer to another. The source and destination
@@ -100,11 +131,33 @@ pub const Action = union(ActionType) {
   transferMemory : mtr.command.TransferMemory,
   transferImageToBuffer : mtr.command.TransferImageToBuffer,
   uploadTexelToImageMemory : mtr.command.UploadTexelToImageMemory,
-  invalid : void,
+
+  // pub fn jsonStringify(
+  //   self : @This(),
+  //   options : std.json.StringifyOptions,
+  //   outStream : anytype
+  // ) @TypeOf(outStream).Error ! void {
+  //   try outStream.writeByte('{');
+
+  //   const unionInfo = @typeInfo(@This()).Union;
+
+  //   inline for (unionInfo.fields) |field| {
+  //     if (self == @field(unionInfo.tag_type.?, field.name)) {
+  //       try std.json.stringify("has", options, outStream);
+  //     }
+  //     else {
+  //       try std.json.stringify("not has", options, outStream);
+  //     }
+  //   }
+
+  //   // try mtr.Context.dumpBufferToWriter(self.contextIdx, outStream);
+
+  //   try outStream.writeByte('}');
+  // }
 };
 
 pub const PoolFlag = packed struct {
-  transientBit : bool = false,
+  transient : bool = false,
   resetCommandBuffer : bool = false,
 };
 
@@ -115,7 +168,43 @@ pub const PoolConstructInfo = struct {
 
 pub const Pool = struct {
   flags : mtr.command.PoolFlag,
+  commandBuffers : std.AutoHashMap(mtr.buffer.Idx, mtr.command.Buffer),
   contextIdx : mtr.command.PoolIdx,
+
+  pub fn deinit(self : * @This()) void {
+    var bufIter = self.commandBuffers.iterator();
+    while (bufIter.next()) |buffer| {
+      buffer.value_ptr.deinit();
+    }
+    self.commandBuffers.deinit();
+  }
+
+  pub fn jsonStringify(
+    self : @This(),
+    options : std.json.StringifyOptions,
+    outStream : anytype
+  ) @TypeOf(outStream).Error ! void {
+    try outStream.writeByte('{');
+
+    var childOpt = options;
+    if (childOpt.whitespace) |*childWhite| {
+      childWhite.indent_level += 1;
+    }
+
+    try mtr.util.json.stringifyVariable(
+      "flags", self.flags, options, outStream
+    );
+    try outStream.writeByte(',');
+    try mtr.util.json.stringifyVariable(
+      "contextIdx", self.contextIdx, options, outStream
+    );
+    try outStream.writeByte(',');
+    try mtr.util.json.stringifyHashMap(
+      "commandBuffers", self.commandBuffers, options, outStream
+    );
+
+    try outStream.writeByte('}');
+  }
 };
 
 pub const BufferConstructInfo = struct {
@@ -125,5 +214,39 @@ pub const BufferConstructInfo = struct {
 
 pub const Buffer = struct {
   commandPool : mtr.command.PoolIdx,
-  id : u64, // implementation detail
+  commandRecordings : std.ArrayList(mtr.command.Action),
+  idx : u64,
+
+  pub fn init(alloc : * std.mem.Allocator) @This() {
+    // TODO this should only be enabled in debug builds
+    return .{
+      .commandRecordings = std.ArrayList(mtr.command.Action).init(alloc),
+    };
+  }
+
+  pub fn deinit(self : * @This()) void {
+    self.commandRecordings.deinit();
+  }
+
+  pub fn jsonStringify(
+    self : @This(),
+    options : std.json.StringifyOptions,
+    outStream : anytype
+  ) @TypeOf(outStream).Error ! void {
+    try outStream.writeByte('{');
+
+    try mtr.util.json.stringifyVariable(
+      "commandPool", self.commandPool, options, outStream
+    );
+    try outStream.writeByte(',');
+    try mtr.util.json.stringifyVariable(
+      "idx", self.idx, options, outStream
+    );
+    try outStream.writeByte(',');
+    try mtr.util.json.stringifyVariable(
+      "commandRecordings", self.commandRecordings.items, options, outStream
+    );
+
+    try outStream.writeByte('}');
+  }
 };

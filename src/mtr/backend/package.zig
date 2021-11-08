@@ -5,11 +5,15 @@ pub const opencl = @import("opencl/package.zig");
 
 pub const RenderingContextType = enum {
   clRasterizer,
+
+  pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
 };
 
 pub const RenderingOptimizationLevel = enum {
   Release,
   Debug,
+
+  pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
 };
 
 pub const RenderingContext = union(RenderingContextType) {
@@ -88,19 +92,19 @@ pub const RenderingContext = union(RenderingContextType) {
   pub fn createCommandBuffer(
     self : * @This(),
     context : mtr.Context,
-    primitive : mtr.command.BufferConstructInfo,
-  ) mtr.command.Buffer {
-    return switch (self.*) {
+    primitive : mtr.command.Buffer,
+  ) void {
+    switch (self.*) {
       .clRasterizer => (
         self.clRasterizer.createCommandBuffer(context, primitive)
       )
-    };
+    }
   }
 
   pub fn beginCommandBufferWriting(
     self : * @This(),
     context : mtr.Context,
-    buffer : mtr.command.Buffer
+    buffer : mtr.command.Buffer,
   ) void {
     switch (self.*) {
       .clRasterizer => (

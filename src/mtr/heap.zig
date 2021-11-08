@@ -19,6 +19,8 @@ pub const Visibility = enum {
   deviceOnly,
   hostVisible,
   hostWritable,
+
+  pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
 };
 
 // Every primitive must be heap-backed, in this every piece of memory
@@ -43,6 +45,6 @@ pub const Primitive = struct {
 pub const Region = struct {
   allocatedHeap : mtr.heap.Idx,
   offset : u64, length : u64,
-  contextIdx : mtr.heap.RegionIdx,
   visibility : mtr.heap.Visibility, // must be same as Primitive, for quick ref
+  contextIdx : mtr.heap.RegionIdx,
 };

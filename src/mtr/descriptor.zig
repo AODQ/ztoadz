@@ -8,6 +8,8 @@ pub const Type = enum {
   storageBuffer,
   sampler,
   image,
+
+  pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
 };
 
 pub const PushConstantRange = struct {

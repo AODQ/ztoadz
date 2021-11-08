@@ -1,6 +1,5 @@
 const mtr = @import("../../package.zig");
 const std = @import("std");
-const log = @import("../../log.zig");
 
 const c = @cImport({
   @cDefine("CL_TARGET_OPENCL_VERSION", "300");
@@ -171,7 +170,6 @@ pub const CommandBuffer = struct {
 pub const CommandPool = struct {
   buffers : std.AutoHashMap(mtr.buffer.Idx, CommandBuffer),
   allocator : * std.mem.Allocator,
-  bufferIdx : mtr.command.BufferIdx = 0,
 
   pub fn init(alloc : * std.mem.Allocator) @This() {
     return .{
@@ -188,20 +186,13 @@ pub const CommandPool = struct {
     self.buffers.deinit();
   }
 
-  pub fn emplaceBuffer(
+  pub fn emplaceCommandBuffer(
     self : * @This(),
-    ci : mtr.command.BufferConstructInfo,
-  ) mtr.command.Buffer {
-    var commandBuffer = CommandBuffer.init(self.allocator);
+    commandBuffer : mtr.command.Buffer,
+  ) void {
     self.buffers.putNoClobber(
-      self.bufferIdx, commandBuffer
+      commandBuffer.idx, CommandBuffer.init(self.allocator),
     ) catch unreachable;
-
-    const previousIdx = self.bufferIdx;
-
-    self.bufferIdx += 1;
-
-    return .{ .commandPool = ci.commandPool, .id = previousIdx };
   }
 };
 
@@ -249,7 +240,7 @@ pub const Rasterizer = struct {
 
     var numPlatforms : c.cl_uint = 0;
     var status = c.clGetPlatformIDs(0, null, &numPlatforms);
-    log.info("number of platforms: {}", .{numPlatforms});
+    std.log.info("number of platforms: {}", .{numPlatforms});
 
     // TODO these should be thrown
     std.debug.assert(status == 0);
@@ -444,7 +435,7 @@ pub const Rasterizer = struct {
 
     const bufferCreateInfo = c.cl_buffer_region {
       .origin = image.offset,
-      .size = image.getImageLength(),
+      .size = image.getImageByteLength(),
     };
 
     var err : c_int = 0;
@@ -477,10 +468,16 @@ pub const Rasterizer = struct {
   pub fn createCommandBuffer(
     self : * @This(),
     context : mtr.Context,
-    ci : mtr.command.BufferConstructInfo,
-  ) mtr.command.Buffer {
+    commandBuffer : mtr.command.Buffer,
+  ) void {
     _ = context;
-    return self.commandPools.getPtr(ci.commandPool).?.emplaceBuffer(ci);
+
+    return (
+      self
+        .commandPools
+        .getPtr(commandBuffer.commandPool).?
+        .emplaceCommandBuffer(commandBuffer)
+    );
   }
 
   pub fn beginCommandBufferWriting(
@@ -491,7 +488,7 @@ pub const Rasterizer = struct {
 
     var commandPool = context.commandPools.getPtr(buffer.commandPool).?;
     var clCommandPool = self.commandPools.getPtr(buffer.commandPool).?;
-    var clBuffer = clCommandPool.buffers.getPtr(buffer.id).?;
+    var clBuffer = clCommandPool.buffers.getPtr(buffer.idx).?;
 
     if (commandPool.flags.resetCommandBuffer == true) {
       clBuffer.commands.clearAndFree(); // TODO maybe try invalidation
@@ -518,7 +515,7 @@ pub const Rasterizer = struct {
       self.commandPools.getPtr(self.activeWritingBuffer.?.commandPool).?
     );
     var clBuffer = (
-      clCommandPool.buffers.getPtr(self.activeWritingBuffer.?.id).?
+      clCommandPool.buffers.getPtr(self.activeWritingBuffer.?.idx).?
     );
 
     var result = clBuffer.commands.addOne() catch unreachable;
@@ -532,7 +529,7 @@ pub const Rasterizer = struct {
     commandBuffer : mtr.command.Buffer,
   ) void {
     var clCommandPool = self.commandPools.getPtr(commandBuffer.commandPool).?;
-    var clCommandBuffer = clCommandPool.buffers.getPtr(commandBuffer.id).?;
+    var clCommandBuffer = clCommandPool.buffers.getPtr(commandBuffer.idx).?;
     var clQueue = self.queues.getPtr(queue.contextIdx).?;
 
     for (clCommandBuffer.commands.items) |commandAction, it| {
@@ -608,6 +605,7 @@ pub const Rasterizer = struct {
         },
         .transferImageToBuffer => |action| {
           var dstBuffer = context.buffers.getPtr(action.bufferDst).?;
+          var srcImage = context.images.getPtr(action.imageSrc).?;
           var clDstBuffer = self.buffers.getPtr(action.bufferDst).?;
           var clSrcImage = self.images.getPtr(action.imageSrc).?;
           var err = (
@@ -617,7 +615,8 @@ pub const Rasterizer = struct {
               clDstBuffer.*,
               0,
               0,
-              dstBuffer.length,
+              // TODO below is a hack
+              std.math.min(dstBuffer.length, srcImage.getImageByteLength()),
               0, null, // events
               null // event out
             )
@@ -673,7 +672,6 @@ pub const Rasterizer = struct {
             )
           );
         },
-        .invalid => unreachable,
       }
     }
   }
@@ -686,5 +684,8 @@ pub const Rasterizer = struct {
     _ = context;
     var clQueue = self.queues.getPtr(queue.contextIdx).?;
     assertCl(c.clFlush(clQueue.*));
+    // for some reason this is necessary, otherwise mapped values aren't
+    //   invalidated (the pointer is valid but they point to 0)
+    std.time.sleep(0);
   }
 };

@@ -3,6 +3,8 @@
 this is just a toy project to play around with Zig in a real-time graphics
 context.
 
+to test: `zig test tests/package.zig -lc -lOpenCL --main-pkg-path .`
+
 
 This exists as both a rendering backend 'MTR' (Monte Toad Renderer), as well
   as a front-end renderering application. The rendering backend is meant to be

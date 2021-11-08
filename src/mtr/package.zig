@@ -75,11 +75,11 @@ pub const backend    = @import("backend/package.zig");
 pub const buffer     = @import("buffer.zig");
 pub const command    = @import("commands.zig");
 pub const context    = @import("context.zig");
+pub const descriptor = @import("descriptor.zig");
 pub const heap       = @import("heap.zig");
 pub const image      = @import("image.zig");
-pub const queue      = @import("queue.zig");
-pub const util       = @import("util.zig");
-pub const descriptor = @import("descriptor.zig");
 pub const pipeline   = @import("pipeline.zig");
+pub const queue      = @import("queue.zig");
+pub const util       = @import("util/package.zig");
 
 pub const Context = context.Context;

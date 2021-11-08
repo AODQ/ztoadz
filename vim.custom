@@ -1,6 +1,5 @@
 function! MakeprgRelease()
-  " let &makeprg = 'zig test src/mtr/tests.zig'
-  let &makeprg = 'zig test src/mtr/tests.zig -lc -lOpenCL'
+  let &makeprg = 'zig test tests/package.zig -lc -lOpenCL --main-pkg-path .'
   make
 endfunction
 

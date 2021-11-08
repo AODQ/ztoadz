@@ -15,6 +15,8 @@ pub const ConstructInfo = struct {
 pub const SharingUsage = enum {
   exclusive,
   concurrent,
+
+  pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
 };
 
 // describes the type of work a queue will do, for the purpose that the device
