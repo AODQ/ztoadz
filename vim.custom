@@ -1,5 +1,5 @@
 function! MakeprgRelease()
-  let &makeprg = 'zig test tests/package.zig -lc -lOpenCL --main-pkg-path .'
+  let &makeprg = 'zig build test -DsupportsVulkan=true'
   make
 endfunction
 

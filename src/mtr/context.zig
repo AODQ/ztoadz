@@ -61,11 +61,6 @@ pub const Context = struct {
       std.debug.panic("could not allocate rendering context", .{});
     };
 
-    var openclContext = (
-      try mtr.backend.opencl.context.Rasterizer.init(primitiveAllocator)
-    );
-    _ = openclContext;
-
     allocatedRenderingContext.* = (
       backend.RenderingContext.init(primitiveAllocator, renderingContext)
       catch {
@@ -117,22 +112,22 @@ pub const Context = struct {
     var utilHeapWrite = mtr.heap.Primitive {
       .length = 1024*1024*50, // 10 mb
       .visibility = mtr.heap.Visibility.hostWritable,
-      .contextIdx = utilContextIdx,
+      .contextIdx = utilContextIdx+1,
     };
 
     var utilHeapRegionWrite = mtr.heap.Region {
-      .allocatedHeap = utilContextIdx,
+      .allocatedHeap = utilContextIdx+1,
       .offset = 0, .length = 1024*1024*50, // 10 mb
       .visibility = mtr.heap.Visibility.hostWritable,
-      .contextIdx = utilContextIdx,
+      .contextIdx = utilContextIdx+1,
     };
 
     var utilBufferWrite = mtr.buffer.Primitive {
-      .allocatedHeapRegion = utilContextIdx,
+      .allocatedHeapRegion = utilContextIdx+1,
       .offset = 0, .length = 1024*1024*50, // 10 mb transfers
       .usage = .{ .transferSrc = true, },
       .queueSharing = mtr.queue.SharingUsage.exclusive,
-      .contextIdx = utilContextIdx,
+      .contextIdx = utilContextIdx+1,
     };
 
     var self : @This() = undefined;
@@ -177,11 +172,11 @@ pub const Context = struct {
       catch unreachable;
     self.buffers.putNoClobber(utilContextIdx, self.utilBufferRead)
       catch unreachable;
-    self.heaps.putNoClobber(utilContextIdx, self.utilHeapWrite)
+    self.heaps.putNoClobber(utilContextIdx+1, self.utilHeapWrite)
       catch unreachable;
-    self.heapRegions.putNoClobber(utilContextIdx, self.utilHeapRegionWrite)
+    self.heapRegions.putNoClobber(utilContextIdx+1, self.utilHeapRegionWrite)
       catch unreachable;
-    self.buffers.putNoClobber(utilContextIdx, self.utilBufferWrite)
+    self.buffers.putNoClobber(utilContextIdx+1, self.utilBufferWrite)
       catch unreachable;
 
     self.renderingContext.createQueue(self, self.utilQueue);
@@ -248,6 +243,9 @@ pub const Context = struct {
     switch (self.renderingContext.*) {
       .clRasterizer => (
         self.renderingContext.clRasterizer.deinit()
+      ),
+      .vkRasterizer => (
+        self.renderingContext.vkRasterizer.deinit()
       ),
     }
 

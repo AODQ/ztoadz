@@ -1,5 +1,6 @@
 const mtr = @import("../src/mtr/package.zig");
 const std = @import("std");
+const util = @import("util.zig");
 
 fn compareValues(failStr : anytype, actual : u8, expected : u8,) void {
   _ = std.testing.expect(actual == expected) catch {};
@@ -144,7 +145,7 @@ test "snapshot - buffer" {
     try mtr.Context.initFromSnapshot(
       snapshot,
       &debugAllocator.allocator,
-      mtr.backend.RenderingContextType.clRasterizer,
+      util.getBackend(),
       mtr.backend.RenderingOptimizationLevel.Debug,
     )
   ;

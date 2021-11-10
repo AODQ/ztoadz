@@ -2,9 +2,11 @@ const mtr = @import("../package.zig");
 const std = @import("std");
 
 pub const opencl = @import("opencl/package.zig");
+pub const vulkan = @import("vulkan/package.zig");
 
 pub const RenderingContextType = enum {
   clRasterizer,
+  vkRasterizer,
 
   pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
 };
@@ -18,6 +20,7 @@ pub const RenderingOptimizationLevel = enum {
 
 pub const RenderingContext = union(RenderingContextType) {
   clRasterizer : opencl.context.Rasterizer,
+  vkRasterizer : vulkan.context.Rasterizer,
 
   pub fn init(
     alloc : * std.mem.Allocator, rct : RenderingContextType
@@ -25,6 +28,9 @@ pub const RenderingContext = union(RenderingContextType) {
     return switch(rct) {
       .clRasterizer => .{
         .clRasterizer = try opencl.context.Rasterizer.init(alloc)
+      },
+      .vkRasterizer => .{
+        .vkRasterizer = try vulkan.context.Rasterizer.init(alloc)
       },
     };
   }
@@ -37,6 +43,9 @@ pub const RenderingContext = union(RenderingContextType) {
     switch (self.*) {
       .clRasterizer => (
         self.clRasterizer.createHeap(context, primitive)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.createHeap(context, primitive)
       )
     }
   }
@@ -49,6 +58,9 @@ pub const RenderingContext = union(RenderingContextType) {
     switch (self.*) {
       .clRasterizer => (
         self.clRasterizer.createHeapRegion(context, primitive)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.createHeapRegion(context, primitive)
       )
     }
   }
@@ -61,6 +73,9 @@ pub const RenderingContext = union(RenderingContextType) {
     switch (self.*) {
       .clRasterizer => (
         self.clRasterizer.createBuffer(context, primitive)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.createBuffer(context, primitive)
       )
     }
   }
@@ -73,6 +88,9 @@ pub const RenderingContext = union(RenderingContextType) {
     switch (self.*) {
       .clRasterizer => (
         self.clRasterizer.createImage(context, primitive)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.createImage(context, primitive)
       )
     }
   }
@@ -85,6 +103,9 @@ pub const RenderingContext = union(RenderingContextType) {
     switch (self.*) {
       .clRasterizer => (
         self.clRasterizer.createCommandPool(context, primitive)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.createCommandPool(context, primitive)
       )
     }
   }
@@ -97,6 +118,9 @@ pub const RenderingContext = union(RenderingContextType) {
     switch (self.*) {
       .clRasterizer => (
         self.clRasterizer.createCommandBuffer(context, primitive)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.createCommandBuffer(context, primitive)
       )
     }
   }
@@ -109,13 +133,17 @@ pub const RenderingContext = union(RenderingContextType) {
     switch (self.*) {
       .clRasterizer => (
         self.clRasterizer.beginCommandBufferWriting(context, buffer)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.beginCommandBufferWriting(context, buffer)
       )
     }
   }
 
   pub fn endCommandBufferWriting(self : * @This(), context : mtr.Context) void {
     switch (self.*) {
-      .clRasterizer => self.clRasterizer.endCommandBufferWriting(context)
+      .clRasterizer => self.clRasterizer.endCommandBufferWriting(context),
+      .vkRasterizer => self.vkRasterizer.endCommandBufferWriting(context)
     }
   }
 
@@ -127,6 +155,9 @@ pub const RenderingContext = union(RenderingContextType) {
     switch (self.*) {
       .clRasterizer => (
         self.clRasterizer.createQueue(context, primitive)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.createQueue(context, primitive)
       )
     }
   }
@@ -139,6 +170,9 @@ pub const RenderingContext = union(RenderingContextType) {
     switch (self.*) {
       .clRasterizer => (
         self.clRasterizer.enqueueToCommandBuffer(context, command)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.enqueueToCommandBuffer(context, command)
       )
     }
   }
@@ -154,6 +188,11 @@ pub const RenderingContext = union(RenderingContextType) {
         self.clRasterizer.submitCommandBufferToQueue(
           context, queue, commandBuffer
         )
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.submitCommandBufferToQueue(
+          context, queue, commandBuffer
+        )
       )
     }
   }
@@ -166,6 +205,9 @@ pub const RenderingContext = union(RenderingContextType) {
     switch (self.*) {
       .clRasterizer => (
         self.clRasterizer.queueFlush(context, queue)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.queueFlush(context, queue)
       )
     }
   }

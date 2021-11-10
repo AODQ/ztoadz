@@ -1,5 +1,6 @@
 const mtr = @import("../src/mtr/package.zig");
 const std = @import("std");
+const util = @import("util.zig");
 
 fn compareValues(failStr : anytype, actual : u8, expected : u8,) void {
   _ = std.testing.expect(actual == expected) catch {};
@@ -26,7 +27,7 @@ test "buffer mapping + transfer" {
   var mtrCtx = (
     mtr.Context.init(
       &debugAllocator.allocator,
-      mtr.backend.RenderingContextType.clRasterizer,
+      util.getBackend(),
       mtr.backend.RenderingOptimizationLevel.Debug,
     )
   );
@@ -264,7 +265,7 @@ test "image upload - channels" {
   var mtrCtx = (
     mtr.Context.init(
       &debugAllocator.allocator,
-      mtr.backend.RenderingContextType.clRasterizer,
+      util.getBackend(),
       mtr.backend.RenderingOptimizationLevel.Debug,
     )
   );

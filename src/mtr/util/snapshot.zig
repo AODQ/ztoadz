@@ -278,15 +278,15 @@ pub fn loadContextFromSnapshot(
     }
   }
 
-  for (parsedSnapshot.queues) |queue| {
-    _ = try mtrCtx.constructQueueWithId(
-      .{
-        // .workType = queue.workType, TODO
-      },
-      queue.contextIdx,
-    );
-    mtrCtx.allocIdx = std.math.max(mtrCtx.allocIdx, queue.contextIdx);
-  }
+  // for (parsedSnapshot.queues) |queue| {
+  //   _ = try mtrCtx.constructQueueWithId(
+  //     .{
+  //       // .workType = queue.workType, TODO
+  //     },
+  //     queue.contextIdx,
+  //   );
+  //   mtrCtx.allocIdx = std.math.max(mtrCtx.allocIdx, queue.contextIdx);
+  // }
 
   // for (parsedSnapshot.queues) |queue| {
   //   _ = try mtrCtx.constructQueueWithId(
