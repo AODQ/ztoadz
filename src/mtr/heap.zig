@@ -6,7 +6,6 @@ pub const Idx = u64;
 
 pub const ConstructInfo = struct {
   visibility : mtr.heap.Visibility,
-  length : u64,
 };
 
 pub const RegionConstructInfo = struct {
@@ -27,7 +26,6 @@ pub const Visibility = enum {
 //   in the library is accounted for & can be manually managed by the user.
 //   Multiple primitives can be allocated inside a single allocation
 pub const Primitive = struct {
-  length : u64,
   visibility : mtr.heap.Visibility,
   contextIdx : mtr.heap.Idx,
 };

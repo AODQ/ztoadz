@@ -63,10 +63,14 @@ pub const Context = struct {
 
     allocatedRenderingContext.* = (
       backend.RenderingContext.init(primitiveAllocator, renderingContext)
-      catch {
+      catch |err| {
         std.log.crit(
-          "{s}{}",
-          .{"could not create the rendering backend: ", renderingContext}
+          "{s}{} ({s})",
+          .{
+            "could not create the rendering backend: ",
+            renderingContext,
+            err,
+          }
         );
         unreachable;
       }
@@ -81,6 +85,7 @@ pub const Context = struct {
 
     var utilCommandPool = mtr.command.Pool {
       .flags = .{ .transient = true, .resetCommandBuffer = true },
+      .queue = utilContextIdx,
       .commandBuffers = (
         std.AutoHashMap(mtr.buffer.Idx, mtr.command.Buffer)
           .init(primitiveAllocator)
@@ -89,7 +94,6 @@ pub const Context = struct {
     };
 
     var utilHeapRead = mtr.heap.Primitive {
-      .length = 1024*1024*50, // 10 mb
       .visibility = mtr.heap.Visibility.hostVisible,
       .contextIdx = utilContextIdx,
     };
@@ -110,7 +114,6 @@ pub const Context = struct {
     };
 
     var utilHeapWrite = mtr.heap.Primitive {
-      .length = 1024*1024*50, // 10 mb
       .visibility = mtr.heap.Visibility.hostWritable,
       .contextIdx = utilContextIdx+1,
     };
@@ -461,7 +464,6 @@ pub const Context = struct {
     idx : mtr.heap.Idx,
   ) !mtr.heap.Idx {
     const heap = mtr.heap.Primitive {
-      .length = ci.length,
       .visibility = ci.visibility,
       .contextIdx = idx,
     };
@@ -593,6 +595,7 @@ pub const Context = struct {
   ) !mtr.command.PoolIdx {
     const pool = mtr.command.Pool {
       .flags = ci.flags,
+      .queue = ci.queue,
       .commandBuffers = (
         std.AutoHashMap(mtr.command.BufferIdx, mtr.command.Buffer)
           .init(self.primitiveAllocator)
@@ -750,11 +753,7 @@ pub const Context = struct {
   // enqueues a command to the command buffer
   pub fn enqueueToCommandBuffer(self : @This(), command : anytype) !void {
     var action : mtr.command.Action = undefined;
-    if (@TypeOf(command) == mtr.command.MapMemory) {
-      action = .{.mapMemory = command};
-    } else if (@TypeOf(command) == mtr.command.UnmapMemory) {
-      action = .{.unmapMemory = command};
-    } else if (@TypeOf(command) == mtr.command.TransferMemory) {
+    if (@TypeOf(command) == mtr.command.TransferMemory) {
       action = .{.transferMemory = command};
     } else if (@TypeOf(command) == mtr.command.TransferImageToBuffer) {
       action = .{.transferImageToBuffer = command};
@@ -795,11 +794,28 @@ pub const Context = struct {
     self.renderingContext.queueFlush(self, queue.?.*);
   }
 
-  pub fn mapBufferMemory(
+  pub fn mapMemory(
     self : @This(),
     range : mtr.util.MappedMemoryRange,
-  ) mtr.util.MappedMemory {
-    return mtr.util.MappedMemory.init(self, range);
+  ) ! mtr.util.MappedMemory {
+    // std.debug.assert( TODO
+    //   (
+    //         heapRegion.visibility == .hostVisible
+    //     and memory.mapping == .Read
+    //   )
+    //   or (
+    //         heapRegion.visibility == .hostWritable
+    //     and memory.mapping == .Write
+    //   )
+    // );
+    return self.renderingContext.mapMemory(self, range);
+  }
+
+  pub fn unmapMemory(
+    self : @This(),
+    memory : mtr.util.MappedMemory,
+  ) void {
+    return self.renderingContext.unmapMemory(self, memory);
   }
 
   pub fn constructPipeline(

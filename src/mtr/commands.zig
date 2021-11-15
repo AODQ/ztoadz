@@ -6,70 +6,11 @@ pub const PoolIdx = u64;
 pub const BufferIdx = u64;
 
 pub const ActionType = enum {
-  mapMemory,
-  unmapMemory,
   transferMemory,
   transferImageToBuffer,
   uploadTexelToImageMemory,
 
   pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
-};
-
-pub const MappingError = error {
-  OutOfBounds,
-  UnknownBufferId,
-  InvalidHeapAccess,
-};
-
-pub const MappingType = enum {
-  Write, Read,
-
-  pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
-};
-
-// uploads memory from the host to the device at a specified hostVisible buffer
-// TODO this command should be removed
-//      the user needs to upload memory themselves by using memory mappings
-pub const MapMemory = struct {
-  actionType : mtr.command.ActionType = .mapMemory,
-  mapping : MappingType, // redundant, this must match Heap visibility
-  buffer : mtr.buffer.Idx,
-  offset : u64 = 0, length : u64 = 0, // if length is 0, assume entire buffer
-  memory : * ? [*] u8,
-
-  pub fn jsonStringify(
-    self : @This(),
-    options : std.json.StringifyOptions,
-    outStream : anytype
-  ) @TypeOf(outStream).Error ! void {
-    try mtr.util.json.stringifyTypedUnionMember(
-      self,
-      "mapMemory",
-      * ? [*] u8,
-      options,
-      outStream,
-    );
-  }
-};
-
-pub const UnmapMemory = struct {
-  actionType : mtr.command.ActionType = .unmapMemory,
-  buffer : mtr.buffer.Idx,
-  memory : [*] u8,
-
-  pub fn jsonStringify(
-    self : @This(),
-    options : std.json.StringifyOptions,
-    outStream : anytype
-  ) @TypeOf(outStream).Error ! void {
-    try mtr.util.json.stringifyTypedUnionMember(
-      self,
-      "unmapMemory",
-      [*] u8,
-      options,
-      outStream,
-    );
-  }
 };
 
 // transfers memory from one buffer to another. The source and destination
@@ -126,8 +67,6 @@ pub const UploadTexelToImageMemory = struct {
 // Commands are not unique, and as such are treated as primitives and may
 //   not refer to any specific unique index of a queue
 pub const Action = union(ActionType) {
-  mapMemory : mtr.command.MapMemory,
-  unmapMemory : mtr.command.UnmapMemory,
   transferMemory : mtr.command.TransferMemory,
   transferImageToBuffer : mtr.command.TransferImageToBuffer,
   uploadTexelToImageMemory : mtr.command.UploadTexelToImageMemory,
@@ -162,13 +101,14 @@ pub const PoolFlag = packed struct {
 };
 
 pub const PoolConstructInfo = struct {
-  // TODO queue family
   flags : mtr.command.PoolFlag,
+  queue : mtr.queue.Idx,
 };
 
 pub const Pool = struct {
   flags : mtr.command.PoolFlag,
   commandBuffers : std.AutoHashMap(mtr.buffer.Idx, mtr.command.Buffer),
+  queue : mtr.queue.Idx,
   contextIdx : mtr.command.PoolIdx,
 
   pub fn deinit(self : * @This()) void {
@@ -191,6 +131,10 @@ pub const Pool = struct {
       childWhite.indent_level += 1;
     }
 
+    try mtr.util.json.stringifyVariable(
+      "queue", self.queue, options, outStream
+    );
+    try outStream.writeByte(',');
     try mtr.util.json.stringifyVariable(
       "flags", self.flags, options, outStream
     );

@@ -40,6 +40,11 @@ pub fn build(builder: * std.build.Builder) !void {
       orelse false
   );
 
+  if (!supportsOpenCL and !supportsVulkan) {
+    std.log.err("must support either OpenCL or Vulkan", .{});
+    return;
+  }
+
   const options = builder.addOptions();
   options.addOption(bool, "supportsOpenCL", supportsOpenCL);
   options.addOption(bool, "supportsVulkan", supportsVulkan);
@@ -47,14 +52,16 @@ pub fn build(builder: * std.build.Builder) !void {
   // add test step
   var testStep = builder.step("test", "Run all the tests");
   var tester = builder.addTest("tests/package.zig");
+  tester.linkSystemLibrary("c");
+  if (supportsOpenCL)
+    tester.linkSystemLibrary("OpenCL");
+  if (supportsVulkan) {
+    tester.linkSystemLibrary("glfw");
+    tester.linkSystemLibrary("vulkan");
+  }
   tester.setMainPkgPath(".");
   tester.addOptions("BuildOptions", options);
   testStep.dependOn(&tester.step);
-
-  if (!supportsOpenCL and !supportsVulkan) {
-    std.log.err("must support either OpenCL or Vulkan", .{});
-    return;
-  }
 
   const mode = builder.standardReleaseOptions();
   const exe = builder.addExecutable("ztoadz", "src/main.zig");
@@ -64,6 +71,10 @@ pub fn build(builder: * std.build.Builder) !void {
 
   if (supportsOpenCL)
     exe.linkSystemLibrary("OpenCL");
+  if (supportsVulkan) {
+    exe.linkSystemLibrary("glfw");
+    exe.linkSystemLibrary("vulkan");
+  }
 
   exe.addOptions("BuildOptions", options);
 

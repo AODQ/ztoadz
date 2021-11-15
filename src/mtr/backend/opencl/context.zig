@@ -168,29 +168,31 @@ pub const CommandBuffer = struct {
 };
 
 pub const CommandPool = struct {
-  buffers : std.AutoHashMap(mtr.buffer.Idx, CommandBuffer),
+  commandBuffers : std.AutoHashMap(mtr.command.BufferIdx, CommandBuffer),
   allocator : * std.mem.Allocator,
 
   pub fn init(alloc : * std.mem.Allocator) @This() {
     return .{
       .allocator = alloc,
-      .buffers = std.AutoHashMap(mtr.buffer.Idx, CommandBuffer).init(alloc),
+      .commandBuffers = (
+        std.AutoHashMap(mtr.command.BufferIdx, CommandBuffer).init(alloc)
+      ),
     };
   }
 
   pub fn deinit(self : * @This()) void {
-    var bufferIterator = self.buffers.iterator();
-    while (bufferIterator.next()) |buffer| {
-      buffer.value_ptr.deinit();
+    var commandBufferIterator = self.commandBuffers.iterator();
+    while (commandBufferIterator.next()) |commandBuffer| {
+      commandBuffer.value_ptr.deinit();
     }
-    self.buffers.deinit();
+    self.commandBuffers.deinit();
   }
 
   pub fn emplaceCommandBuffer(
     self : * @This(),
     commandBuffer : mtr.command.Buffer,
   ) void {
-    self.buffers.putNoClobber(
+    self.commandBuffers.putNoClobber(
       commandBuffer.idx, CommandBuffer.init(self.allocator),
     ) catch unreachable;
   }
@@ -240,7 +242,6 @@ pub const Rasterizer = struct {
 
     var numPlatforms : c.cl_uint = 0;
     var status = c.clGetPlatformIDs(0, null, &numPlatforms);
-    std.log.info("number of platforms: {}", .{numPlatforms});
 
     // TODO these should be thrown
     std.debug.assert(status == 0);
@@ -481,20 +482,20 @@ pub const Rasterizer = struct {
   }
 
   pub fn beginCommandBufferWriting(
-    self : * @This(), context : mtr.Context, buffer : mtr.command.Buffer,
+    self : * @This(), context : mtr.Context, commandBuffer : mtr.command.Buffer,
   ) void {
     _ = context;
     std.debug.assert(self.activeWritingBuffer == null);
 
-    var commandPool = context.commandPools.getPtr(buffer.commandPool).?;
-    var clCommandPool = self.commandPools.getPtr(buffer.commandPool).?;
-    var clBuffer = clCommandPool.buffers.getPtr(buffer.idx).?;
+    var commandPool = context.commandPools.getPtr(commandBuffer.commandPool).?;
+    var clCommandPool = self.commandPools.getPtr(commandBuffer.commandPool).?;
+    var clBuffer = clCommandPool.commandBuffers.getPtr(commandBuffer.idx).?;
 
     if (commandPool.flags.resetCommandBuffer == true) {
       clBuffer.commands.clearAndFree(); // TODO maybe try invalidation
     }
 
-    self.activeWritingBuffer = buffer;
+    self.activeWritingBuffer = commandBuffer;
   }
 
   pub fn endCommandBufferWriting(self : * @This(), context : mtr.Context) void {
@@ -505,17 +506,16 @@ pub const Rasterizer = struct {
 
   pub fn enqueueToCommandBuffer(
     self : * @This(),
-    context : mtr.Context,
+    _ : mtr.Context,
     action : mtr.command.Action,
   ) void {
-    _ = context;
     std.debug.assert(self.activeWritingBuffer != null);
 
     var clCommandPool = (
       self.commandPools.getPtr(self.activeWritingBuffer.?.commandPool).?
     );
     var clBuffer = (
-      clCommandPool.buffers.getPtr(self.activeWritingBuffer.?.idx).?
+      clCommandPool.commandBuffers.getPtr(self.activeWritingBuffer.?.idx).?
     );
 
     var result = clBuffer.commands.addOne() catch unreachable;
@@ -529,63 +529,13 @@ pub const Rasterizer = struct {
     commandBuffer : mtr.command.Buffer,
   ) void {
     var clCommandPool = self.commandPools.getPtr(commandBuffer.commandPool).?;
-    var clCommandBuffer = clCommandPool.buffers.getPtr(commandBuffer.idx).?;
+    var clCommandBuffer = (
+      clCommandPool.commandBuffers.getPtr(commandBuffer.idx).?
+    );
     var clQueue = self.queues.getPtr(queue.contextIdx).?;
 
-    for (clCommandBuffer.commands.items) |commandAction, it| {
+    for (clCommandBuffer.commands.items) |commandAction| {
       switch (commandAction) {
-        .mapMemory => |action| {
-          var clBuffer = self.buffers.getPtr(action.buffer).?;
-          var buffer = context.buffers.getPtr(action.buffer).?;
-          var heapRegion = (
-            context.heapRegions.getPtr(buffer.allocatedHeapRegion).?
-          );
-
-          std.debug.assert(
-            (
-                  heapRegion.visibility == .hostVisible
-              and action.mapping == .Read
-            )
-            or (
-                  heapRegion.visibility == .hostWritable
-              and action.mapping == .Write
-            )
-          );
-
-          var err : c_int = 0;
-          var memory : ? * c_void = (
-            c.clEnqueueMapBuffer(
-              clQueue.*,
-              clBuffer.*,
-              c.CL_FALSE,
-              heapVisibilityToClMapping(heapRegion.visibility),
-              action.offset,
-              (if (action.length == 0) buffer.length else action.length),
-              0, // num events in wait list
-              null, // event wait list
-              null, // returned event hadnle
-              &err,
-            )
-          );
-          assertCl(err);
-
-          clCommandBuffer.commands.items[it].mapMemory.memory.* = (
-            @ptrCast(? [*] u8, memory)
-          );
-        },
-        .unmapMemory => |action| {
-          var clBuffer = self.buffers.getPtr(action.buffer).?;
-          var err = (
-            c.clEnqueueUnmapMemObject(
-              clQueue.*,
-              clBuffer.*,
-              action.memory,
-              0, null, // events
-              null // event out
-            )
-          );
-          assertCl(err);
-        },
         .transferMemory => |action| {
           var clDstBuffer = self.buffers.getPtr(action.bufferDst).?;
           var clSrcBuffer = self.buffers.getPtr(action.bufferSrc).?;
@@ -684,8 +634,59 @@ pub const Rasterizer = struct {
     _ = context;
     var clQueue = self.queues.getPtr(queue.contextIdx).?;
     assertCl(c.clFlush(clQueue.*));
-    // for some reason this is necessary, otherwise mapped values aren't
-    //   invalidated (the pointer is valid but they point to 0)
-    std.time.sleep(0);
+  }
+
+  pub fn mapMemory(
+    self : * @This(),
+    context : mtr.Context,
+    memory : mtr.util.MappedMemoryRange,
+  ) ! mtr.util.MappedMemory {
+    var clHeapRegion = self.heapRegions.getPtr(memory.heapRegion).?;
+    var clQueue = self.queues.getPtr(mtr.Context.utilContextIdx).?;
+    var heapRegion = context.heapRegions.getPtr(memory.heapRegion).?;
+
+    var err : c_int = 0;
+    var ptr : ? * c_void = (
+      c.clEnqueueMapBuffer(
+        clQueue.*,
+        clHeapRegion.*,
+        c.CL_FALSE,
+        heapVisibilityToClMapping(heapRegion.visibility),
+        memory.offset,
+        (if (memory.length == 0) heapRegion.length else memory.length),
+        0, // num events in wait list
+        null, // event wait list
+        null, // returned event hadnle
+        &err,
+      )
+    );
+    assertCl(err);
+
+    assertCl(c.clFlush(clQueue.*));
+    std.time.sleep(0); // weird that I have to do this
+
+    return mtr.util.MappedMemory {
+      .ptr = @ptrCast([*] u8, ptr.?), .mapping = memory.heapRegion
+    };
+  }
+
+  pub fn unmapMemory(
+    self : @This(),
+    _ : mtr.Context,
+    memory : mtr.util.MappedMemory
+  ) void {
+    var clHeapRegion = self.heapRegions.getPtr(memory.mapping).?;
+    var clQueue = self.queues.getPtr(mtr.Context.utilContextIdx).?;
+    var err = (
+      c.clEnqueueUnmapMemObject(
+        clQueue.*,
+        clHeapRegion.*,
+        memory.ptr,
+        0, null, // events
+        null // event out
+      )
+    );
+    assertCl(err);
+    assertCl(c.clFlush(clQueue.*));
   }
 };

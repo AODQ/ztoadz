@@ -23,6 +23,9 @@ pub const Usage = packed struct {
   bufferUniform : bool = false,
   bufferStorage : bool = false,
   bufferAccelerationStructure : bool = false,
+
+  // no vertex / buffer bit b/c software rasterized; the rasterizer does not
+  //   use indices/vertices as traditional pipeline would
 };
 
 // Any piece of information that exists as an array of elements must be

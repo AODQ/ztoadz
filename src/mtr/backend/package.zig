@@ -211,4 +211,34 @@ pub const RenderingContext = union(RenderingContextType) {
       )
     }
   }
+
+  pub fn mapMemory(
+    self : * @This(),
+    context : mtr.Context,
+    range : mtr.util.MappedMemoryRange,
+  ) ! mtr.util.MappedMemory {
+    return switch (self.*) {
+      .clRasterizer => (
+        try self.clRasterizer.mapMemory(context, range)
+      ),
+      .vkRasterizer => (
+        try self.vkRasterizer.mapMemory(context, range)
+      )
+    };
+  }
+
+  pub fn unmapMemory(
+    self : * @This(),
+    context : mtr.Context,
+    memory : mtr.util.MappedMemory,
+  ) void {
+    switch (self.*) {
+      .clRasterizer => (
+        self.clRasterizer.unmapMemory(context, memory)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.unmapMemory(context, memory)
+      )
+    }
+  }
 };

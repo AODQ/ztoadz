@@ -1,12 +1,12 @@
-const mtr = @import("../../package.zig");
+const mtr = @import("../package.zig");
 const std = @import("std");
 
-// nil OpenCL context, effectively does nothing, a complete error
-//   if this actually is used at runtime
+// nil context, effectively does nothing, a complete error if this actually is
+//   used at runtime
 
 pub const Rasterizer = struct {
   pub fn init(_ : * std.mem.Allocator) ! @This() {
-    return error.NoOpenCLContextAvailable;
+    return error.NoContextAvailable;
   }
 
   pub fn deinit(_ : * @This()) void {
@@ -80,6 +80,21 @@ pub const Rasterizer = struct {
     _ : * @This(),
     _ : mtr.Context,
     _ : mtr.queue.Primitive,
+  ) void {
+  }
+
+  pub fn mapMemory(
+    _ : * @This(),
+    _ : mtr.Context,
+    _ : mtr.util.MappedMemoryRange,
+  ) ! mtr.util.MappedMemory {
+    return error.NoContextAvailable;
+  }
+
+  pub fn unmapMemory(
+    _ : * @This(),
+    _ : mtr.Context,
+    _ : mtr.util.MappedMemory,
   ) void {
   }
 };

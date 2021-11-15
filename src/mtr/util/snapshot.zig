@@ -59,7 +59,6 @@ const Image = struct {
 };
 
 const CommandActionType = enum {
-  mapMemory,
   unmapMemory,
   transferMemory,
   transferImageToBuffer,
@@ -67,8 +66,6 @@ const CommandActionType = enum {
 };
 
 const CommandAction = union(CommandActionType) {
-  mapMemory : CommandMapMemory,
-  unmapMemory : CommandUnmapMemory,
   transferMemory : CommandTransferMemory,
   transferImageToBuffer : CommandTransferImageToBuffer,
   uploadTexelToImageMemory : CommandUploadTexelToImageMemory,
@@ -98,19 +95,6 @@ const SnapshotContext = struct {
   buffers : [] Buffer,
   images : [] Image,
   commandPools : [] CommandPool,
-};
-
-// ----- commands -----
-const CommandMapMemory = struct {
-  actionType : mtr.command.ActionType,
-  mapping : mtr.command.MappingType,
-  buffer : u64,
-  offset : u64, length : u64,
-};
-
-const CommandUnmapMemory = struct {
-  actionType : mtr.command.ActionType,
-  buffer : u64,
 };
 
 // transfers memory from one buffer to another. The source and destination
@@ -165,136 +149,137 @@ pub fn loadContextFromSnapshot(
   mtrCtx : * mtr.Context,
   jsonSnapshot : [] const u8,
 ) !void {
-  var tokenStream = std.json.TokenStream.init(jsonSnapshot);
-  var allocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-  defer allocator.deinit();
-  @setEvalBranchQuota(100000000);
-  const parsedSnapshot = try (
-    std.json.parse(
-      SnapshotContext, &tokenStream, .{.allocator = &allocator.allocator}
-    )
-  );
+  _ = mtrCtx ; _ = jsonSnapshot ;
+  // var tokenStream = std.json.TokenStream.init(jsonSnapshot);
+  // var allocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+  // defer allocator.deinit();
+  // @setEvalBranchQuota(100000000);
+  // const parsedSnapshot = try (
+  //   std.json.parse(
+  //     SnapshotContext, &tokenStream, .{.allocator = &allocator.allocator}
+  //   )
+  // );
 
 
-  // re-create context
+  // // re-create context
 
-  for (parsedSnapshot.heaps) |heap| {
-    _ = try mtrCtx.constructHeapWithId(
-      .{
-        .visibility = heap.visibility,
-        .length = heap.length
-      },
-      heap.contextIdx,
-    );
-    mtrCtx.allocIdx = std.math.max(mtrCtx.allocIdx, heap.contextIdx);
-  }
-
-  for (parsedSnapshot.heapRegions) |heapRegion| {
-    _ = try mtrCtx.constructHeapRegionWithId(
-      .{
-        .allocatedHeap = heapRegion.allocatedHeap,
-        // .offset = heapRegion.offset, this might not ever matter
-        .length = heapRegion.length,
-        // .visibility = heapRegion.visibility
-      },
-      heapRegion.contextIdx,
-    );
-    mtrCtx.allocIdx = std.math.max(mtrCtx.allocIdx, heapRegion.contextIdx);
-  }
-
-  for (parsedSnapshot.buffers) |buffer| {
-    var newBuffer = try mtrCtx.constructBufferWithId(
-      .{
-        .allocatedHeapRegion = buffer.allocatedHeapRegion,
-        .offset = buffer.offset, .length = buffer.length,
-        .usage = .{
-          .transferSrc = buffer.usage.transferSrc,
-          .transferDst = buffer.usage.transferDst,
-          .transferSrcDst = buffer.usage.transferSrcDst,
-          .bufferUniform = buffer.usage.bufferUniform,
-          .bufferStorage = buffer.usage.bufferStorage,
-          .bufferAccelerationStructure = (
-            buffer.usage.bufferAccelerationStructure
-          ),
-        },
-        .queueSharing = buffer.queueSharing,
-      },
-      buffer.contextIdx,
-    );
-    mtrCtx.allocIdx = std.math.max(mtrCtx.allocIdx, buffer.contextIdx);
-
-    // -- put data back into the buffer
-
-    // map ptr & copy json data to it
-    // TODO this has to be looped over 10MBs
-    var mappedMemory : ? [*] u8 = null;
-    {
-      mtrCtx.beginCommandBufferWriting(mtrCtx.utilCommandBuffer);
-      defer mtrCtx.endCommandBufferWriting();
-
-      try mtrCtx.enqueueToCommandBuffer(
-        mtr.command.MapMemory {
-          .buffer = mtrCtx.utilBufferWrite.contextIdx,
-          .mapping = .Write,
-          .offset = 0,
-          .length = buffer.underlyingMemory.len,
-          .memory = &mappedMemory,
-        },
-      );
-    }
-    mtrCtx.submitCommandBufferToQueue(
-      mtrCtx.utilQueue.contextIdx,
-      mtrCtx.utilCommandBuffer,
-    );
-    mtrCtx.queueFlush(mtrCtx.utilQueue.contextIdx);
-    std.debug.assert(mappedMemory != null);
-
-    std.mem.copy(
-      u8,
-      mappedMemory.?[0 .. buffer.underlyingMemory.len],
-      buffer.underlyingMemory
-    );
-
-    // copy buffer
-    {
-      mtrCtx.beginCommandBufferWriting(mtrCtx.utilCommandBuffer);
-      defer mtrCtx.endCommandBufferWriting();
-
-      try mtrCtx.enqueueToCommandBuffer(
-        mtr.command.UnmapMemory {
-          .buffer = mtrCtx.utilBufferWrite.contextIdx,
-          .memory = mappedMemory.?,
-        },
-      );
-      try mtrCtx.enqueueToCommandBuffer(
-        mtr.command.TransferMemory {
-          .bufferSrc = mtrCtx.utilBufferWrite.contextIdx,
-          .bufferDst = newBuffer,
-          .offsetSrc = 0,
-          .offsetDst = 0,
-          .length = buffer.underlyingMemory.len,
-        },
-      );
-    }
-  }
-
-  // for (parsedSnapshot.queues) |queue| {
-  //   _ = try mtrCtx.constructQueueWithId(
+  // for (parsedSnapshot.heaps) |heap| {
+  //   _ = try mtrCtx.constructHeapWithId(
   //     .{
-  //       // .workType = queue.workType, TODO
+  //       .visibility = heap.visibility,
+  //       .length = heap.length
   //     },
-  //     queue.contextIdx,
+  //     heap.contextIdx,
   //   );
-  //   mtrCtx.allocIdx = std.math.max(mtrCtx.allocIdx, queue.contextIdx);
+  //   mtrCtx.allocIdx = std.math.max(mtrCtx.allocIdx, heap.contextIdx);
   // }
 
-  // for (parsedSnapshot.queues) |queue| {
-  //   _ = try mtrCtx.constructQueueWithId(
+  // for (parsedSnapshot.heapRegions) |heapRegion| {
+  //   _ = try mtrCtx.constructHeapRegionWithId(
   //     .{
-  //       .workType = queue.workType,
+  //       .allocatedHeap = heapRegion.allocatedHeap,
+  //       // .offset = heapRegion.offset, this might not ever matter
+  //       .length = heapRegion.length,
+  //       // .visibility = heapRegion.visibility
   //     },
-  //     queue.contextIdx,
+  //     heapRegion.contextIdx,
   //   );
-  //   mtrCtx.allocIdx = std.math.max(mtrCtx.allocIdx, queue.contextIdx);
+  //   mtrCtx.allocIdx = std.math.max(mtrCtx.allocIdx, heapRegion.contextIdx);
   // }
+
+  // for (parsedSnapshot.buffers) |buffer| {
+  //   var newBuffer = try mtrCtx.constructBufferWithId(
+  //     .{
+  //       .allocatedHeapRegion = buffer.allocatedHeapRegion,
+  //       .offset = buffer.offset, .length = buffer.length,
+  //       .usage = .{
+  //         .transferSrc = buffer.usage.transferSrc,
+  //         .transferDst = buffer.usage.transferDst,
+  //         .transferSrcDst = buffer.usage.transferSrcDst,
+  //         .bufferUniform = buffer.usage.bufferUniform,
+  //         .bufferStorage = buffer.usage.bufferStorage,
+  //         .bufferAccelerationStructure = (
+  //           buffer.usage.bufferAccelerationStructure
+  //         ),
+  //       },
+  //       .queueSharing = buffer.queueSharing,
+  //     },
+  //     buffer.contextIdx,
+  //   );
+  //   mtrCtx.allocIdx = std.math.max(mtrCtx.allocIdx, buffer.contextIdx);
+
+  //   // -- put data back into the buffer
+
+  //   // map ptr & copy json data to it
+  //   // TODO this has to be looped over 10MBs
+  //   var mappedMemory : ? [*] u8 = null;
+  //   {
+  //     mtrCtx.beginCommandBufferWriting(mtrCtx.utilCommandBuffer);
+  //     defer mtrCtx.endCommandBufferWriting();
+
+  //     try mtrCtx.enqueueToCommandBuffer(
+  //       mtr.command.MapMemory {
+  //         .buffer = mtrCtx.utilBufferWrite.contextIdx,
+  //         .mapping = .Write,
+  //         .offset = 0,
+  //         .length = buffer.underlyingMemory.len,
+  //         .memory = &mappedMemory,
+  //       },
+  //     );
+  //   }
+  //   mtrCtx.submitCommandBufferToQueue(
+  //     mtrCtx.utilQueue.contextIdx,
+  //     mtrCtx.utilCommandBuffer,
+  //   );
+  //   mtrCtx.queueFlush(mtrCtx.utilQueue.contextIdx);
+  //   std.debug.assert(mappedMemory != null);
+
+  //   std.mem.copy(
+  //     u8,
+  //     mappedMemory.?[0 .. buffer.underlyingMemory.len],
+  //     buffer.underlyingMemory
+  //   );
+
+  //   // copy buffer
+  //   {
+  //     mtrCtx.beginCommandBufferWriting(mtrCtx.utilCommandBuffer);
+  //     defer mtrCtx.endCommandBufferWriting();
+
+  //     try mtrCtx.enqueueToCommandBuffer(
+  //       mtr.command.UnmapMemory {
+  //         .buffer = mtrCtx.utilBufferWrite.contextIdx,
+  //         .memory = mappedMemory.?,
+  //       },
+  //     );
+  //     try mtrCtx.enqueueToCommandBuffer(
+  //       mtr.command.TransferMemory {
+  //         .bufferSrc = mtrCtx.utilBufferWrite.contextIdx,
+  //         .bufferDst = newBuffer,
+  //         .offsetSrc = 0,
+  //         .offsetDst = 0,
+  //         .length = buffer.underlyingMemory.len,
+  //       },
+  //     );
+  //   }
+  // }
+
+  // // for (parsedSnapshot.queues) |queue| {
+  // //   _ = try mtrCtx.constructQueueWithId(
+  // //     .{
+  // //       // .workType = queue.workType, TODO
+  // //     },
+  // //     queue.contextIdx,
+  // //   );
+  // //   mtrCtx.allocIdx = std.math.max(mtrCtx.allocIdx, queue.contextIdx);
+  // // }
+
+  // // for (parsedSnapshot.queues) |queue| {
+  // //   _ = try mtrCtx.constructQueueWithId(
+  // //     .{
+  // //       .workType = queue.workType,
+  // //     },
+  // //     queue.contextIdx,
+  // //   );
+  // //   mtrCtx.allocIdx = std.math.max(mtrCtx.allocIdx, queue.contextIdx);
+  // // }
 }

@@ -111,13 +111,6 @@ test "snapshot - buffer" {
   \\                "offsetSrc": 0,
   \\                "offsetDst": 0,
   \\                "length": 4
-  \\              },
-  \\              {
-  \\                "actionType": "mapMemory",
-  \\                "mapping": "Read",
-  \\                "buffer": 108,
-  \\                "offset": 0,
-  \\                "length": 4
   \\              }
   \\            ]
   \\          }
@@ -126,8 +119,6 @@ test "snapshot - buffer" {
   \\    ]
   \\  }
   );
-
-  std.log.info("running the test", .{});
 
   var debugAllocator =
     std.heap.GeneralPurposeAllocator(

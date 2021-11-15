@@ -12,6 +12,10 @@ pub const ConstructInfo = struct {
 //   time, while concurrent implies that there is potential for multiple queues
 //   to be using the same buffer at a time (mandating some sort of
 //   synchronization)
+// TODO if the buffer is SharingModeConcurrent, this *needs* to be a tagged
+//   union where the queues that will use this buffer are stuffed into a list
+//   otherwise we can't tell Vk backend which queues are used in
+//   VkBufferCreateInfo
 pub const SharingUsage = enum {
   exclusive,
   concurrent,

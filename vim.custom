@@ -1,5 +1,10 @@
 function! MakeprgRelease()
-  let &makeprg = 'zig build test -DsupportsVulkan=true'
+  let &makeprg = 'zig build test -DsupportsOpenCL=true -DsupportsVulkan=false'
+  make
+endfunction
+
+function! MakeprgVulkan()
+  let &makeprg = 'zig build test -DsupportsOpenCL=false -DsupportsVulkan=true'
   make
 endfunction
 
