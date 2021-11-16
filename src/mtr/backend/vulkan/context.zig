@@ -553,9 +553,6 @@ pub const Rasterizer = struct {
   commandPools : std.AutoHashMap(mtr.command.PoolIdx, vk.CommandPool),
   commandBuffers : std.AutoHashMap(mtr.command.PoolIdx, CommandBuffer),
 
-  // TODO i suppose some mapping of thread to buffer instead of this
-  activeWritingBuffer : ? vk.CommandBuffer = null,
-
   vkb : vkDispatcher.VulkanBaseDispatch,
   instance : vk.Instance,
   vki : vkDispatcher.VulkanInstanceDispatch,
@@ -829,12 +826,25 @@ pub const Rasterizer = struct {
       catch unreachable;
   }
 
-  pub fn createBuffer(
-    self : * @This(), context : mtr.Context, buffer : mtr.buffer.Primitive,
+  pub fn bindBufferToSubheap(
+    self : * @This(),
+    _ : mtr.Context,
+    buffer : mtr.buffer.Primitive,
   ) void {
-    const vkHeapRegion = self.heapRegions.getPtr(buffer.allocatedHeapRegion).?;
-    const heapRegion = context.heapRegions.getPtr(buffer.allocatedHeapRegion).?;
+    var vkBuffer = self.buffers.get(buffer.contextIdx).?;
+    var vkDeviceMemory = self.heapRegions.get(buffer.allocatedHeapRegion).?;
+    self.vkd.vkdd.bindBufferMemory(
+      self.vkd.device, vkBuffer, vkDeviceMemory, buffer.offset
+    ) catch |err| {
+      std.log.crit("Could not bind buffer memory {}", .{err});
+    };
+  }
 
+  pub fn createBuffer(
+    self : * @This(),
+    _ : mtr.Context,
+    buffer : mtr.buffer.Primitive,
+  ) void {
     const vkBufferCI = vk.BufferCreateInfo {
       .flags = .{ },
       .size = buffer.length,
@@ -848,13 +858,16 @@ pub const Rasterizer = struct {
       self.vkd.vkdd.createBuffer(self.vkd.device, vkBufferCI, null)
     ) catch unreachable;
 
-    var dedicatedRequirements = vk.MemoryDedicatedRequirements {
-      .prefersDedicatedAllocation = 0,
-      .requiresDedicatedAllocation = 0,
-    };
+    self.buffers.putNoClobber(buffer.contextIdx, vkBuffer) catch unreachable;
+  }
 
+  pub fn bufferMemoryRequirements(
+    self : * @This(),
+    _ : mtr.Context,
+    buffer : mtr.buffer.Primitive,
+  ) mtr.util.MemoryRequirements {
+    var vkBuffer = self.buffers.get(buffer.contextIdx).?;
     var memoryRequirement = vk.MemoryRequirements2 {
-      .pNext = &dedicatedRequirements,
       .memoryRequirements = undefined,
     };
 
@@ -863,23 +876,10 @@ pub const Rasterizer = struct {
       .{ .buffer = vkBuffer },
       &memoryRequirement,
     );
-    const memoryRequirements = memoryRequirement.memoryRequirements;
-
-    if (memoryRequirements.size > heapRegion.length) {
-      std.log.crit(
-        "buffer being allocated to heap reigon w/ size {} , but the subheap "
-          ++ "requires {}",
-        .{heapRegion.length, memoryRequirements.size},
-      );
-    }
-
-    self.vkd.vkdd.bindBufferMemory(
-      self.vkd.device, vkBuffer, vkHeapRegion.*, buffer.offset,
-    ) catch |err| {
-      std.log.crit("Could not bind buffer memory {}", .{err});
+    return .{
+      .length = memoryRequirement.memoryRequirements.size,
+      .alignment = memoryRequirement.memoryRequirements.alignment,
     };
-
-    self.buffers.putNoClobber(buffer.contextIdx, vkBuffer) catch unreachable;
   }
 
   pub fn createImage(
@@ -935,11 +935,11 @@ pub const Rasterizer = struct {
   }
 
   pub fn beginCommandBufferWriting(
-    self : * @This(), _ : mtr.Context, commandBuffer : mtr.command.Buffer,
+    self : * @This(),
+    _ : mtr.Context,
+    commandBufferIdx : mtr.command.BufferIdx,
   ) void {
-    std.debug.assert(self.activeWritingBuffer == null);
-
-    var vkCommandBuffer = self.commandBuffers.getPtr(commandBuffer.idx).?;
+    var vkCommandBuffer = self.commandBuffers.getPtr(commandBufferIdx).?;
 
     self.vkd.vkdd.beginCommandBuffer(
       vkCommandBuffer.buffers.items[0],
@@ -948,28 +948,34 @@ pub const Rasterizer = struct {
         .pInheritanceInfo = null,
       },
     ) catch unreachable;
-
-    self.activeWritingBuffer = vkCommandBuffer.buffers.items[0];
   }
 
-  pub fn endCommandBufferWriting(self : * @This(), _ : mtr.Context) void {
-    std.debug.assert(self.activeWritingBuffer != null);
-    self.vkd.vkdd.endCommandBuffer(self.activeWritingBuffer.?)
-      catch unreachable;
-    self.activeWritingBuffer = null;
+  pub fn endCommandBufferWriting(
+    self : * @This(),
+    _ : mtr.Context,
+    commandBufferIdx : mtr.command.BufferIdx,
+  ) void {
+    var commandBuffer = (
+      self.commandBuffers.get(commandBufferIdx).?.buffers.items[0]
+    );
+    self.vkd.vkdd.endCommandBuffer(commandBuffer) catch unreachable;
   }
 
   pub fn enqueueToCommandBuffer(
     self : * @This(),
     context : mtr.Context,
+    commandBufferIdx : mtr.command.BufferIdx,
     command : mtr.command.Action,
   ) void {
+    var commandBuffer = (
+      self.commandBuffers.get(commandBufferIdx).?.buffers.items[0]
+    );
     switch (command) {
       .transferMemory => |action| {
         var vkBufferSrc = self.buffers.get(action.bufferSrc).?;
         var vkBufferDst = self.buffers.get(action.bufferDst).?;
         self.vkd.vkdd.cmdCopyBuffer2KHR(
-          self.activeWritingBuffer.?,
+          commandBuffer,
           vk.CopyBufferInfo2KHR {
             .srcBuffer = vkBufferSrc,
             .dstBuffer = vkBufferDst,
@@ -990,7 +996,7 @@ pub const Rasterizer = struct {
         var vkImageSrc = self.images.get(action.imageSrc).?;
         var vkBufferDst = self.buffers.get(action.bufferDst).?;
         self.vkd.vkdd.cmdCopyImageToBuffer2KHR(
-          self.activeWritingBuffer.?,
+          commandBuffer,
           vk.CopyImageToBufferInfo2KHR {
             .srcImage = vkImageSrc,
             .srcImageLayout = .@"general",

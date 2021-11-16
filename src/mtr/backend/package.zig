@@ -65,6 +65,21 @@ pub const RenderingContext = union(RenderingContextType) {
     }
   }
 
+  pub fn bindBufferToSubheap(
+    self : * @This(),
+    context : mtr.Context,
+    primitive : mtr.buffer.Primitive,
+  ) void {
+    switch (self.*) {
+      .clRasterizer => (
+        self.clRasterizer.bindBufferToSubheap(context, primitive)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.bindBufferToSubheap(context, primitive)
+      )
+    }
+  }
+
   pub fn createBuffer(
     self : * @This(),
     context : mtr.Context,
@@ -78,6 +93,21 @@ pub const RenderingContext = union(RenderingContextType) {
         self.vkRasterizer.createBuffer(context, primitive)
       )
     }
+  }
+
+  pub fn bufferMemoryRequirements(
+    self : * @This(),
+    context : mtr.Context,
+    primitive : mtr.buffer.Primitive,
+  ) mtr.util.MemoryRequirements {
+    return switch (self.*) {
+      .clRasterizer => (
+        self.clRasterizer.bufferMemoryRequirements(context, primitive)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.bufferMemoryRequirements(context, primitive)
+      )
+    };
   }
 
   pub fn createImage(
@@ -128,22 +158,30 @@ pub const RenderingContext = union(RenderingContextType) {
   pub fn beginCommandBufferWriting(
     self : * @This(),
     context : mtr.Context,
-    buffer : mtr.command.Buffer,
+    primitive : mtr.command.BufferIdx,
   ) void {
     switch (self.*) {
       .clRasterizer => (
-        self.clRasterizer.beginCommandBufferWriting(context, buffer)
+        self.clRasterizer.beginCommandBufferWriting(context, primitive)
       ),
       .vkRasterizer => (
-        self.vkRasterizer.beginCommandBufferWriting(context, buffer)
+        self.vkRasterizer.beginCommandBufferWriting(context, primitive)
       )
     }
   }
 
-  pub fn endCommandBufferWriting(self : * @This(), context : mtr.Context) void {
+  pub fn endCommandBufferWriting(
+    self : * @This(),
+    context : mtr.Context,
+    primitive : mtr.command.BufferIdx,
+  ) void {
     switch (self.*) {
-      .clRasterizer => self.clRasterizer.endCommandBufferWriting(context),
-      .vkRasterizer => self.vkRasterizer.endCommandBufferWriting(context)
+      .clRasterizer => (
+        self.clRasterizer.endCommandBufferWriting(context, primitive)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.endCommandBufferWriting(context, primitive)
+      ),
     }
   }
 
@@ -165,14 +203,19 @@ pub const RenderingContext = union(RenderingContextType) {
   pub fn enqueueToCommandBuffer(
     self : * @This(),
     context : mtr.Context,
+    commandBufferIdx : mtr.command.BufferIdx,
     command : mtr.command.Action,
   ) void {
     switch (self.*) {
       .clRasterizer => (
-        self.clRasterizer.enqueueToCommandBuffer(context, command)
+        self
+          .clRasterizer
+          .enqueueToCommandBuffer(context, commandBufferIdx, command)
       ),
       .vkRasterizer => (
-        self.vkRasterizer.enqueueToCommandBuffer(context, command)
+        self
+          .vkRasterizer
+          .enqueueToCommandBuffer(context, commandBufferIdx, command)
       )
     }
   }

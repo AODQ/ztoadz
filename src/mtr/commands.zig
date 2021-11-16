@@ -1,7 +1,6 @@
 const mtr = @import("package.zig");
 const std = @import("std");
 
-pub const Idx = u64;
 pub const PoolIdx = u64;
 pub const BufferIdx = u64;
 

@@ -482,23 +482,28 @@ pub const Rasterizer = struct {
   }
 
   pub fn beginCommandBufferWriting(
-    self : * @This(), context : mtr.Context, commandBuffer : mtr.command.Buffer,
+    _ : * @This(),
+    _ : mtr.Context,
+    _ : mtr.command.BufferIdx,
   ) void {
-    _ = context;
-    std.debug.assert(self.activeWritingBuffer == null);
+    // std.debug.assert(self.activeWritingBuffer == null);
 
-    var commandPool = context.commandPools.getPtr(commandBuffer.commandPool).?;
-    var clCommandPool = self.commandPools.getPtr(commandBuffer.commandPool).?;
-    var clBuffer = clCommandPool.commandBuffers.getPtr(commandBuffer.idx).?;
+    // var commandPool = context.commandPools.getPtr(commandBuffer.commandPool).?;
+    // var clCommandPool = self.commandPools.getPtr(commandBuffer.commandPool).?;
+    // var clBuffer = clCommandPool.commandBuffers.getPtr(commandBuffer.idx).?;
 
-    if (commandPool.flags.resetCommandBuffer == true) {
-      clBuffer.commands.clearAndFree(); // TODO maybe try invalidation
-    }
+    // if (commandPool.flags.resetCommandBuffer == true) {
+    //   clBuffer.commands.clearAndFree(); // TODO maybe try invalidation
+    // }
 
-    self.activeWritingBuffer = commandBuffer;
+    // self.activeWritingBuffer = commandBuffer;
   }
 
-  pub fn endCommandBufferWriting(self : * @This(), context : mtr.Context) void {
+  pub fn endCommandBufferWriting(
+    self : * @This(),
+    context : mtr.Context,
+    _ : mtr.command.BufferIdx,
+  ) void {
     _ = context;
     std.debug.assert(self.activeWritingBuffer != null);
     self.activeWritingBuffer = null;

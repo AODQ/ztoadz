@@ -54,16 +54,21 @@ pub const Rasterizer = struct {
   }
 
   pub fn beginCommandBufferWriting(
-    _ : * @This(), _ : mtr.Context, _ : mtr.command.Buffer,
+    _ : * @This(), _ : mtr.Context, _ : mtr.command.BufferIdx,
   ) void {
   }
 
-  pub fn endCommandBufferWriting(_ : * @This(), _ : mtr.Context) void {
+  pub fn endCommandBufferWriting(
+    _ : * @This(),
+    _ : mtr.Context,
+    _ : mtr.command.BufferIdx,
+  ) void {
   }
 
   pub fn enqueueToCommandBuffer(
     _ : * @This(),
     _ : mtr.Context,
+    _ : mtr.command.BufferIdx,
     _ : mtr.command.Action,
   ) void {
   }
@@ -96,5 +101,20 @@ pub const Rasterizer = struct {
     _ : mtr.Context,
     _ : mtr.util.MappedMemory,
   ) void {
+  }
+
+  pub fn bindBufferToSubheap(
+    _ : * @This(),
+    _ : mtr.Context,
+    _ : mtr.buffer.Primitive,
+  ) void {
+  }
+
+  pub fn bufferMemoryRequirements(
+    _ : * @This(),
+    _ : mtr.Context,
+    _ : mtr.buffer.Primitive,
+  ) mtr.util.MemoryRequirements {
+    return .{ .length = 0, .alignment = 0 };
   }
 };

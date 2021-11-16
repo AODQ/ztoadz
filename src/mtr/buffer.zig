@@ -4,7 +4,6 @@ const std = @import("std");
 pub const Idx = u64;
 
 pub const ConstructInfo = struct {
-  allocatedHeapRegion : mtr.heap.RegionIdx,
   offset : u64, length : u64,
   usage : mtr.buffer.Usage,
   queueSharing : mtr.queue.SharingUsage,

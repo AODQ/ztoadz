@@ -58,31 +58,25 @@ test "buffer mapping + transfer" {
     })
   );
 
-  const heapRegionWrite : mtr.heap.RegionIdx = (
-    try mtrCtx.constructHeapRegion(.{
-      .allocatedHeap = heapWrite,
-      .length = 256, // TODO get minimum size w/ api
-    })
-  );
+  var testBufferWrite : mtr.buffer.Idx = 0;
+  {
+    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(heapWrite);
+    defer _ = heapRegionAllocator.finish();
 
-  const testBufferWrite : mtr.buffer.Idx = (
-    try mtrCtx.constructBuffer(.{
-      .allocatedHeapRegion = heapRegionWrite,
-      .offset = 0,
-      .length = @sizeOf(u8)*4,
-      .usage = mtr.buffer.Usage{ .transferSrc=true },
-      .queueSharing = mtr.queue.SharingUsage.exclusive,
-    })
-  );
-
-  _ = testBufferWrite;
-  _ = commandBufferScratch;
-  _ = queue;
+    testBufferWrite = try (
+      heapRegionAllocator.createBuffer(.{
+        .offset = 0,
+        .length = @sizeOf(u8)*4,
+        .usage = mtr.buffer.Usage{ .transferSrc = true },
+        .queueSharing = mtr.queue.SharingUsage.exclusive,
+      })
+    );
+  }
 
   {
-    var mappedMemory = try mtrCtx.mapMemory(.{
+    var mappedMemory = try mtrCtx.mapMemoryBuffer(.{
       .mapping = mtr.util.MappingType.Write,
-      .heapRegion = heapRegionWrite,
+      .buffer = testBufferWrite,
       .offset = 0, .length = @sizeOf(u8)*4,
     });
     defer mtrCtx.unmapMemory(mappedMemory);
@@ -100,28 +94,28 @@ test "buffer mapping + transfer" {
     })
   );
 
-  const heapRegionRead : mtr.heap.RegionIdx = (
-    try mtrCtx.constructHeapRegion(.{
-      .allocatedHeap = heapRead,
-      .length = 256, // TODO get minimum size w/ api
-    })
-  );
+  var testBufferRead : mtr.buffer.Idx = 0;
+  {
+    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(heapRead);
+    defer _ = heapRegionAllocator.finish();
 
-  const testBufferRead : mtr.buffer.Idx = (
-    try mtrCtx.constructBuffer(.{
-      .allocatedHeapRegion = heapRegionRead,
-      .offset = 0,
-      .length = @sizeOf(u8)*4,
-      .usage = mtr.buffer.Usage{ .transferDst=true },
-      .queueSharing = mtr.queue.SharingUsage.exclusive,
-    })
-  );
-  _ = testBufferRead;
+    testBufferRead = try (
+      heapRegionAllocator.createBuffer(.{
+        .offset = 0,
+        .length = @sizeOf(u8)*4,
+        .usage = mtr.buffer.Usage{ .transferDst=true },
+        .queueSharing = mtr.queue.SharingUsage.exclusive,
+      })
+    );
+  }
 
-  mtrCtx.beginCommandBufferWriting(commandBufferScratch);
+  {
+    var commandBufferRecorder = (
+      mtrCtx.createCommandBufferRecorder(commandBufferScratch)
+    );
+    defer commandBufferRecorder.finish();
 
-    // now perform a copy
-    try mtrCtx.enqueueToCommandBuffer(
+    commandBufferRecorder.append(
       mtr.command.TransferMemory {
         .bufferSrc = testBufferWrite,
         .bufferDst = testBufferRead,
@@ -130,15 +124,15 @@ test "buffer mapping + transfer" {
         .length = @sizeOf(u8)*4,
       },
     );
+  }
 
-  mtrCtx.endCommandBufferWriting();
   mtrCtx.submitCommandBufferToQueue(queue, commandBufferScratch);
   mtrCtx.queueFlush(queue);
 
   {
-    var mappedMemory = try mtrCtx.mapMemory(.{
+    var mappedMemory = try mtrCtx.mapMemoryBuffer(.{
       .mapping = mtr.util.MappingType.Read,
-      .heapRegion = heapRegionRead,
+      .buffer = testBufferWrite,
       .offset = 0, .length = @sizeOf(u8)*4,
     });
     defer mtrCtx.unmapMemory(mappedMemory);
