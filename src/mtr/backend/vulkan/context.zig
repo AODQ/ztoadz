@@ -9,6 +9,37 @@ fn zeroInitInPlace(ptr : anytype) void {
   ptr.* = std.mem.zeroInit(std.meta.Child(@TypeOf(ptr)), .{});
 }
 
+pub fn toImageType(image : mtr.image.Primitive) vk.ImageType {
+  if (image.depth > 0)
+    return vk.ImageType.@"3D";
+  if (image.height > 0)
+    return vk.ImageType.@"2D";
+  return vk.ImageType.@"1D";
+}
+
+pub fn toFormat(image : mtr.image.Primitive) vk.Format {
+  return switch (image.byteFormat) {
+    .uint8 => switch (image.channels) {
+      .R => vk.Format.r8Uint,
+      .RGB => vk.Format.r8g8b8Uint,
+      .RGBA => vk.Format.r8g8b8a8Uint,
+    },
+  };
+}
+
+pub fn toSampleCountFlags(image : mtr.image.Primitive) vk.SampleCountFlags {
+  return switch (image.samplesPerTexel) {
+    .s1 => vk.SampleCountFlags.fromInt(0),
+  };
+}
+
+pub fn toSharingMode(image : mtr.image.Primitive) vk.SharingMode {
+  return switch (image.queueSharing) {
+    .exclusive => vk.SharingMode.exclusive,
+    .concurrent => vk.SharingMode.concurrent,
+  };
+}
+
 const VulkanDeviceQueues = struct {
   computeIdx : u32 = 0,
   graphicsIdx : u32 = 0,
@@ -116,10 +147,10 @@ fn queueSharingUsageToVk(usage : mtr.queue.SharingUsage) vk.SharingMode {
 
 const CommandBuffer = struct {
   buffers : std.ArrayList(vk.CommandBuffer),
-  commandPool : vk.CommandPool, // this is necessary for dealloc
+  commandPool : mtr.command.PoolIdx, // this is necessary for dealloc
 
   pub fn init(
-    commandPool : vk.CommandPool,
+    commandPool : mtr.command.PoolIdx,
     alloc : * std.mem.Allocator,
   ) @This() {
     return @This() {
@@ -131,6 +162,13 @@ const CommandBuffer = struct {
   pub fn deinit(self : * @This()) void {
     self.buffers.deinit();
   }
+};
+
+const Image = struct {
+  handle : vk.Image,
+  layout : vk.ImageLayout,
+  accessFlags : vk.AccessFlags = .{ },
+  stageFlags : vk.PipelineStageFlags = .{ .topOfPipeBit=true },
 };
 
 /// graphics context for a device backing the current application
@@ -548,7 +586,7 @@ pub const Rasterizer = struct {
   heaps : std.AutoHashMap(mtr.heap.RegionIdx, Heap),
   heapRegions : std.AutoHashMap(mtr.heap.RegionIdx, vk.DeviceMemory),
   buffers : std.AutoHashMap(mtr.buffer.Idx, vk.Buffer),
-  images : std.AutoHashMap(mtr.image.Idx, vk.Image),
+  images : std.AutoHashMap(mtr.image.Idx, Image),
   queues : std.AutoHashMap(mtr.queue.Idx, VulkanDeviceQueue),
   commandPools : std.AutoHashMap(mtr.command.PoolIdx, vk.CommandPool),
   commandBuffers : std.AutoHashMap(mtr.command.PoolIdx, CommandBuffer),
@@ -628,7 +666,7 @@ pub const Rasterizer = struct {
       .buffers = (
         std.AutoHashMap(mtr.heap.RegionIdx, vk.Buffer).init(allocator)
       ),
-      .images = std.AutoHashMap(mtr.image.Idx, vk.Image).init(allocator),
+      .images = std.AutoHashMap(mtr.image.Idx, Image).init(allocator),
       .queues = (
         std.AutoHashMap(mtr.queue.Idx, VulkanDeviceQueue).init(allocator)
       ),
@@ -661,7 +699,11 @@ pub const Rasterizer = struct {
 
     var imageIter = self.images.iterator();
     while (imageIter.next()) |image| {
-      self.vkd.vkdd.destroyImage(self.vkd.device, image.value_ptr.*, null);
+      self.vkd.vkdd.destroyImage(
+        self.vkd.device,
+        image.value_ptr.*.handle,
+        null
+      );
     }
 
     var bufferIter = self.buffers.iterator();
@@ -677,9 +719,10 @@ pub const Rasterizer = struct {
     var commandBufferIter = self.commandBuffers.iterator();
     while (commandBufferIter.next()) |commandBufferIterNext| {
       var commandBuffer = commandBufferIterNext.value_ptr;
+      var commandPool = self.commandPools.get(commandBuffer.commandPool).?;
       self.vkd.vkdd.freeCommandBuffers(
         self.vkd.device,
-        commandBuffer.commandPool,
+        commandPool,
         @intCast(u32, commandBuffer.buffers.items.len),
         @ptrCast([*] const vk.CommandBuffer, commandBuffer.buffers.items.ptr),
       );
@@ -812,6 +855,8 @@ pub const Rasterizer = struct {
     self : * @This(), _ : mtr.Context, heapRegion : mtr.heap.Region
   ) void {
     var heap = self.heaps.get(heapRegion.allocatedHeap).?;
+    std.debug.assert(heapRegion.length > 0);
+    std.log.info("heapregion length: {}", .{heapRegion.length});
     var deviceMemory = (
       self.vkd.vkdd.allocateMemory(
         self.vkd.device,
@@ -882,10 +927,87 @@ pub const Rasterizer = struct {
     };
   }
 
-  pub fn createImage(
-    self : * @This(), _ : mtr.Context, image : mtr.image.Primitive,
+  pub fn bindImageToSubheap(
+    self : * @This(),
+    _ : mtr.Context,
+    image : mtr.image.Primitive,
   ) void {
-    _ = self; _ = image;
+    var vkImage = self.images.get(image.contextIdx).?.handle;
+    var vkDeviceMemory = self.heapRegions.get(image.allocatedHeapRegion).?;
+    self.vkd.vkdd.bindImageMemory(
+      self.vkd.device,
+      vkImage,
+      vkDeviceMemory,
+      image.offset
+    ) catch |err| {
+      std.log.crit("Could not bind buffer memory {}", .{err});
+    };
+  }
+
+  pub fn imageMemoryRequirements(
+    self : * @This(),
+    _ : mtr.Context,
+    image : mtr.image.Primitive,
+  ) mtr.util.MemoryRequirements {
+    var vkImage = self.images.get(image.contextIdx).?.handle;
+    var memoryRequirement = vk.MemoryRequirements2 {
+      .memoryRequirements = undefined,
+    };
+
+    self.vkd.vkdd.getImageMemoryRequirements2(
+      self.vkd.device,
+      .{ .image = vkImage },
+      &memoryRequirement,
+    );
+
+    return .{
+      .length = memoryRequirement.memoryRequirements.size,
+      .alignment = memoryRequirement.memoryRequirements.alignment,
+    };
+  }
+
+  pub fn createImage(
+    self : * @This(),
+    _ : mtr.Context,
+    image : mtr.image.Primitive,
+  ) void {
+    var vkImage = (
+      self.vkd.vkdd.createImage(
+        self.vkd.device,
+        vk.ImageCreateInfo {
+          .flags = vk.ImageCreateFlags {
+            .subsampledBitEXT = image.samplesPerTexel != .s1,
+          },
+          .imageType = toImageType(image),
+          .format = toFormat(image),
+          .extent = vk.Extent3D {
+            .width = @intCast(u32, image.width),
+            .height = @intCast(u32, image.height),
+            .depth = @intCast(u32, image.depth),
+          },
+          .mipLevels = @intCast(u32, image.mipmapLevels),
+          .arrayLayers = @intCast(u32, image.arrayLayers),
+          .samples = toSampleCountFlags(image),
+          .tiling = vk.ImageTiling.optimal,
+          .usage = vk.ImageUsageFlags {
+            .transferSrcBit = true, // TODO
+            .transferDstBit = true,
+            .sampledBit = true,
+            .storageBit = true,
+          },
+          .sharingMode = toSharingMode(image),
+          .queueFamilyIndexCount = 0,
+          .pQueueFamilyIndices = undefined, // TODO pull from queueSharing union
+          .initialLayout = vk.ImageLayout.@"undefined",
+        },
+        null,
+      ) catch unreachable
+    );
+
+    self.images.putNoClobber(
+      image.contextIdx,
+      Image { .handle = vkImage, .layout = vk.ImageLayout.@"undefined", },
+    ) catch unreachable;
   }
 
   pub fn createCommandPool(
@@ -917,7 +1039,9 @@ pub const Rasterizer = struct {
     commandBuffer : mtr.command.Buffer,
   ) void {
     var vkCommandPool = self.commandPools.get(commandBuffer.commandPool).?;
-    var newCommandBuffer = CommandBuffer.init(vkCommandPool, self.allocator);
+    var newCommandBuffer = (
+      CommandBuffer.init(commandBuffer.commandPool, self.allocator)
+    );
     newCommandBuffer.buffers.resize(1) catch unreachable;
 
     self.vkd.vkdd.allocateCommandBuffers(
@@ -968,14 +1092,17 @@ pub const Rasterizer = struct {
     command : mtr.command.Action,
   ) void {
     var commandBuffer = (
-      self.commandBuffers.get(commandBufferIdx).?.buffers.items[0]
+      self.commandBuffers.getPtr(commandBufferIdx).?
     );
+    var vkCommandBuffer = commandBuffer.buffers.items[0];
+    var commandPool = context.commandPools.getPtr(commandBuffer.commandPool).?;
+    var vkQueue = self.queues.get(commandPool.queue).?;
     switch (command) {
       .transferMemory => |action| {
         var vkBufferSrc = self.buffers.get(action.bufferSrc).?;
         var vkBufferDst = self.buffers.get(action.bufferDst).?;
         self.vkd.vkdd.cmdCopyBuffer2KHR(
-          commandBuffer,
+          vkCommandBuffer,
           vk.CopyBufferInfo2KHR {
             .srcBuffer = vkBufferSrc,
             .dstBuffer = vkBufferDst,
@@ -993,12 +1120,54 @@ pub const Rasterizer = struct {
       },
       .transferImageToBuffer => |action| {
         var srcImage = context.images.getPtr(action.imageSrc).?;
-        var vkImageSrc = self.images.get(action.imageSrc).?;
+        var vkImageSrc = self.images.getPtr(action.imageSrc).?;
         var vkBufferDst = self.buffers.get(action.bufferDst).?;
+
+        const subresourceRange = (
+          vk.ImageSubresourceRange {
+            .aspectMask = .{},
+            .baseMipLevel = action.mipmapLayerBegin,
+            .levelCount = action.mipmapLayerCount,
+            .baseArrayLayer = action.arrayLayerBegin,
+            .layerCount = action.arrayLayerCount,
+          }
+        );
+
+        const imageExtent = vk.Extent3D {
+          .width = action.width, .height = action.height, .depth = action.depth
+        };
+        const imageOffset = vk.Offset3D {
+          .x = @intCast(i32, action.xOffset),
+          .y = @intCast(i32, action.yOffset),
+          .z = @intCast(i32, action.zOffset),
+        };
+
+        {
+          var imageMemoryBarrier = vk.ImageMemoryBarrier {
+            .oldLayout = vkImageSrc.layout,
+            .newLayout = vk.ImageLayout.transferSrcOptimal,
+            .image = vkImageSrc.handle,
+            .subresourceRange = subresourceRange,
+            .srcAccessMask = vkImageSrc.accessFlags,
+            .dstAccessMask = .{ .transferReadBit = true },
+            .srcQueueFamilyIndex = vkQueue.familyIndex,
+            .dstQueueFamilyIndex = vkQueue.familyIndex,
+          };
+          self.vkd.vkdd.cmdPipelineBarrier(
+            vkCommandBuffer,
+            vkImageSrc.stageFlags,
+            .{ .transferBit = true },
+            vk.DependencyFlags { },
+            0, undefined, // memory barriers
+            0, undefined, // buffer memory barriers
+            1, @ptrCast([*] vk.ImageMemoryBarrier, &imageMemoryBarrier),
+          );
+        }
+
         self.vkd.vkdd.cmdCopyImageToBuffer2KHR(
-          commandBuffer,
+          vkCommandBuffer,
           vk.CopyImageToBufferInfo2KHR {
-            .srcImage = vkImageSrc,
+            .srcImage = vkImageSrc.handle,
             .srcImageLayout = .@"general",
             .dstBuffer = vkBufferDst,
             .regionCount = 1,
@@ -1009,21 +1178,64 @@ pub const Rasterizer = struct {
                 .bufferRowLength = @intCast(u32, srcImage.width), // TODO
                 .bufferImageHeight = @intCast(u32, srcImage.height), // TODO
                 .imageSubresource = vk.ImageSubresourceLayers {
-                  .aspectMask = .{ .colorBit = true },
-                  .mipLevel = 0,
-                  .baseArrayLayer = 0,
-                  .layerCount = 0,
+                  .aspectMask = subresourceRange.aspectMask,
+                  .mipLevel = subresourceRange.baseMipLevel,
+                  .baseArrayLayer = subresourceRange.baseArrayLayer,
+                  .layerCount = subresourceRange.layerCount,
                 },
-                .imageOffset = . { .x = 0, .y = 0, .z = 0, },
-                .imageExtent = . { .width = 0, .height = 0, .depth = 0, },
+                .imageOffset = imageOffset,
+                .imageExtent = imageExtent,
               }
             ),
           },
         );
+
+        {
+          var imageMemoryBarrier = vk.ImageMemoryBarrier {
+            .oldLayout = vk.ImageLayout.transferSrcOptimal,
+            .newLayout = vk.ImageLayout.general,
+            .image = vkImageSrc.handle,
+            .subresourceRange = subresourceRange,
+            .srcAccessMask = .{ .transferReadBit = true },
+            // TODO below needs to come from somehwere
+            // .dstAccessMask = .{ .shaderReadBit = true, .shaderWriteBit = true },
+            .dstAccessMask = .{ },
+            .srcQueueFamilyIndex = vkQueue.familyIndex,
+            .dstQueueFamilyIndex = vkQueue.familyIndex,
+          };
+          self.vkd.vkdd.cmdPipelineBarrier(
+            vkCommandBuffer,
+            .{ .transferBit = true },
+            .{ .bottomOfPipeBit = true },
+            vk.DependencyFlags { },
+            0, undefined, // memory barriers
+            0, undefined, // buffer memory barriers
+            1, @ptrCast([*] vk.ImageMemoryBarrier, &imageMemoryBarrier),
+          );
+        }
+
+        vkImageSrc.layout = vk.ImageLayout.general;
+        vkImageSrc.accessFlags = vk.AccessFlags { };
       },
       .uploadTexelToImageMemory => |action| {
-        _ = action;
-        // vkcmdclearcopyimage
+        var vkImage = self.images.get(action.image).?;
+        const subresourceRange = (
+          vk.ImageSubresourceRange {
+            .aspectMask = .{},
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+          }
+        );
+        self.vkd.vkdd.cmdClearColorImage(
+          vkCommandBuffer,
+          vkImage.handle,
+          vkImage.layout,
+          vk.ClearColorValue { .float32 = action.rgba },
+          1,
+          @ptrCast([*] const vk.ImageSubresourceRange, &subresourceRange),
+        );
       },
     }
   }

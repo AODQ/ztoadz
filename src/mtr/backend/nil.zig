@@ -117,4 +117,12 @@ pub const Rasterizer = struct {
   ) mtr.util.MemoryRequirements {
     return .{ .length = 0, .alignment = 0 };
   }
+
+  pub fn imageMemoryRequirements(
+    _ : * @This(),
+    _ : mtr.Context,
+    _ : mtr.image.Primitive,
+  ) mtr.util.MemoryRequirements {
+    return .{ .length = 0, .alignment = 0 };
+  }
 };

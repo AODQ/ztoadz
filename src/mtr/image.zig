@@ -4,7 +4,6 @@ const std = @import("std");
 pub const Idx = u64;
 
 pub const ConstructInfo = struct {
-  allocatedHeapRegion : mtr.heap.RegionIdx,
   offset : u64, // TODO change for buffer/image 'offset' -> 'offsetIntoHeap'
   width : u64, height : u64, depth : u64,
   samplesPerTexel : mtr.image.Sample,
@@ -68,6 +67,7 @@ pub const Primitive = struct {
   normalized : bool,
   queueSharing : mtr.queue.SharingUsage,
   contextIdx : mtr.image.Idx,
+  // TODO maybe usage flags? (transfer src/dst)
 
   pub fn getImageByteLength(self : @This()) u64 {
     return (

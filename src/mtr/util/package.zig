@@ -60,6 +60,8 @@ pub const HeapRegionAllocator = struct {
       return 0; // TODO return null handle
     }
 
+    std.log.info("tracking offset: {}", .{self.trackingOffset});
+
     // create a subheap to allocate all these resources under
     const heapRegion : mtr.heap.RegionIdx = (
       self.mtrCtx.constructHeapRegion(.{
@@ -108,6 +110,29 @@ pub const HeapRegionAllocator = struct {
     self.trackingOffset += memoryRequirements.length;
 
     return buffer;
+  }
+
+  pub fn createImage(
+    self : * @This(),
+    ci : mtr.image.ConstructInfo
+  ) !mtr.image.Idx {
+    var image = try self.mtrCtx.constructImage(ci);
+    var memoryRequirements = self.mtrCtx.imageMemoryRequirements(image);
+
+    // align this image's offset
+    self.trackingOffset += (
+        (memoryRequirements.alignment - self.trackingOffset)
+      % memoryRequirements.alignment
+    );
+    (try self.suballocations.addOne()).* = .{
+      .image = .{
+        .image = image,
+        .relativeOffset = self.trackingOffset,
+      }
+    };
+    self.trackingOffset += memoryRequirements.length;
+
+    return image;
   }
 
   const BufferInfo = struct {

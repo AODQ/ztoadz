@@ -28,15 +28,15 @@ pub const Context = struct {
   // anything util* doesn't need to be recorded, it effectively exists just to
   //   provide underlying implementation details
   // TODO this should be indices
-  utilQueue : mtr.queue.Primitive,
-  utilHeapRead : mtr.heap.Primitive,
-  utilHeapRegionRead : mtr.heap.Region,
-  utilHeapWrite : mtr.heap.Primitive,
-  utilHeapRegionWrite : mtr.heap.Region,
-  utilCommandPool : mtr.command.Pool,
-  utilCommandBuffer : mtr.command.BufferIdx,
-  utilBufferRead : mtr.buffer.Primitive,
-  utilBufferWrite : mtr.buffer.Primitive,
+  // utilQueue : mtr.queue.Primitive,
+  // utilHeapRead : mtr.heap.Primitive,
+  // utilHeapRegionRead : mtr.heap.Region,
+  // utilHeapWrite : mtr.heap.Primitive,
+  // utilHeapRegionWrite : mtr.heap.Region,
+  // utilCommandPool : mtr.command.Pool,
+  // utilCommandBuffer : mtr.command.BufferIdx,
+  // utilBufferRead : mtr.buffer.Primitive,
+  // utilBufferWrite : mtr.buffer.Primitive,
 
   allocIdx : u64, // temporary FIXME
 
@@ -75,74 +75,74 @@ pub const Context = struct {
 
     // -- create util info
 
-    var utilQueue = mtr.queue.Primitive {
-      .workType = .{.transfer = true},
-      .contextIdx = utilContextIdx,
-    };
+    // var utilQueue = mtr.queue.Primitive {
+    //   .workType = .{.transfer = true},
+    //   .contextIdx = utilContextIdx,
+    // };
 
-    var utilCommandPool = mtr.command.Pool {
-      .flags = .{ .transient = true, .resetCommandBuffer = true },
-      .queue = utilContextIdx,
-      .commandBuffers = (
-        std.AutoHashMap(mtr.buffer.Idx, mtr.command.Buffer)
-          .init(primitiveAllocator)
-      ),
-      .contextIdx = utilContextIdx,
-    };
+    // var utilCommandPool = mtr.command.Pool {
+    //   .flags = .{ .transient = true, .resetCommandBuffer = true },
+    //   .queue = utilContextIdx,
+    //   .commandBuffers = (
+    //     std.AutoHashMap(mtr.buffer.Idx, mtr.command.Buffer)
+    //       .init(primitiveAllocator)
+    //   ),
+    //   .contextIdx = utilContextIdx,
+    // };
 
-    var utilHeapRead = mtr.heap.Primitive {
-      .visibility = mtr.heap.Visibility.hostVisible,
-      .contextIdx = utilContextIdx,
-    };
+    // var utilHeapRead = mtr.heap.Primitive {
+    //   .visibility = mtr.heap.Visibility.hostVisible,
+    //   .contextIdx = utilContextIdx,
+    // };
 
-    var utilHeapRegionRead = mtr.heap.Region {
-      .allocatedHeap = utilContextIdx,
-      .offset = 0, .length = 1024*1024*50, // 10 mb
-      .visibility = mtr.heap.Visibility.hostVisible,
-      .contextIdx = utilContextIdx,
-    };
+    // var utilHeapRegionRead = mtr.heap.Region {
+    //   .allocatedHeap = utilContextIdx,
+    //   .offset = 0, .length = 1024, // 10 mb
+    //   .visibility = mtr.heap.Visibility.hostVisible,
+    //   .contextIdx = utilContextIdx,
+    // };
 
-    var utilBufferRead = mtr.buffer.Primitive {
-      .allocatedHeapRegion = 0,
-      .offset = 0, .length = 1024*1024*50, // 10 mb transfers
-      .usage = .{ .transferDst = true, },
-      .queueSharing = mtr.queue.SharingUsage.exclusive,
-      .contextIdx = utilContextIdx,
-    };
+    // var utilBufferRead = mtr.buffer.Primitive {
+    //   .allocatedHeapRegion = 0,
+    //   .offset = 0, .length = 1024*1024*50, // 10 mb transfers
+    //   .usage = .{ .transferDst = true, },
+    //   .queueSharing = mtr.queue.SharingUsage.exclusive,
+    //   .contextIdx = utilContextIdx,
+    // };
 
-    var utilHeapWrite = mtr.heap.Primitive {
-      .visibility = mtr.heap.Visibility.hostWritable,
-      .contextIdx = utilContextIdx+1,
-    };
+    // var utilHeapWrite = mtr.heap.Primitive {
+    //   .visibility = mtr.heap.Visibility.hostWritable,
+    //   .contextIdx = utilContextIdx+1,
+    // };
 
-    var utilHeapRegionWrite = mtr.heap.Region {
-      .allocatedHeap = utilContextIdx+1,
-      .offset = 0, .length = 1024*1024*50, // 10 mb
-      .visibility = mtr.heap.Visibility.hostWritable,
-      .contextIdx = utilContextIdx+1,
-    };
+    // var utilHeapRegionWrite = mtr.heap.Region {
+    //   .allocatedHeap = utilContextIdx+1,
+    //   .offset = 0, .length = 1024*1024*50, // 10 mb
+    //   .visibility = mtr.heap.Visibility.hostWritable,
+    //   .contextIdx = utilContextIdx+1,
+    // };
 
-    var utilBufferWrite = mtr.buffer.Primitive {
-      .allocatedHeapRegion = 0,
-      .offset = 0, .length = 1024*1024*50, // 10 mb transfers
-      .usage = .{ .transferSrc = true, },
-      .queueSharing = mtr.queue.SharingUsage.exclusive,
-      .contextIdx = utilContextIdx+1,
-    };
+    // var utilBufferWrite = mtr.buffer.Primitive {
+    //   .allocatedHeapRegion = 0,
+    //   .offset = 0, .length = 1024*1024*50, // 10 mb transfers
+    //   .usage = .{ .transferSrc = true, },
+    //   .queueSharing = mtr.queue.SharingUsage.exclusive,
+    //   .contextIdx = utilContextIdx+1,
+    // };
 
-    // TODO the buffers need to bind to subheap
+    // // TODO the buffers need to bind to subheap
 
     var self : @This() = undefined;
     self = .{
-      .utilQueue = utilQueue,
-      .utilHeapRead = utilHeapRead,
-      .utilHeapRegionRead = utilHeapRegionRead,
-      .utilBufferRead = utilBufferRead,
-      .utilHeapWrite = utilHeapWrite,
-      .utilHeapRegionWrite = utilHeapRegionWrite,
-      .utilBufferWrite = utilBufferWrite,
-      .utilCommandPool = utilCommandPool,
-      .utilCommandBuffer = undefined,
+      // .utilQueue = undefined,
+      // .utilHeapRead = undefined,
+      // .utilHeapRegionRead = undefined,
+      // .utilBufferRead = undefined,
+      // .utilHeapWrite = undefined,
+      // .utilHeapRegionWrite = undefined,
+      // .utilBufferWrite = undefined,
+      // .utilCommandPool = undefined,
+      // .utilCommandBuffer = undefined,
       .heaps = @TypeOf(self.heaps).init(primitiveAllocator),
       .queues = @TypeOf(self.queues).init(primitiveAllocator),
       .heapRegions = @TypeOf(self.heapRegions).init(primitiveAllocator),
@@ -163,37 +163,37 @@ pub const Context = struct {
       )
     };
 
-    self.queues.putNoClobber(utilContextIdx, self.utilQueue)
-      catch unreachable;
-    self.commandPools.putNoClobber(utilContextIdx, self.utilCommandPool)
-      catch unreachable;
-    self.heaps.putNoClobber(utilContextIdx, self.utilHeapRead)
-      catch unreachable;
-    self.heapRegions.putNoClobber(utilContextIdx, self.utilHeapRegionRead)
-      catch unreachable;
-    self.buffers.putNoClobber(utilContextIdx, self.utilBufferRead)
-      catch unreachable;
-    self.heaps.putNoClobber(utilContextIdx+1, self.utilHeapWrite)
-      catch unreachable;
-    self.heapRegions.putNoClobber(utilContextIdx+1, self.utilHeapRegionWrite)
-      catch unreachable;
-    self.buffers.putNoClobber(utilContextIdx+1, self.utilBufferWrite)
-      catch unreachable;
+    // self.queues.putNoClobber(utilContextIdx, self.utilQueue)
+    //   catch unreachable;
+    // self.commandPools.putNoClobber(utilContextIdx, self.utilCommandPool)
+    //   catch unreachable;
+    // self.heaps.putNoClobber(utilContextIdx, self.utilHeapRead)
+    //   catch unreachable;
+    // self.heapRegions.putNoClobber(utilContextIdx, self.utilHeapRegionRead)
+    //   catch unreachable;
+    // self.buffers.putNoClobber(utilContextIdx, self.utilBufferRead)
+    //   catch unreachable;
+    // self.heaps.putNoClobber(utilContextIdx+1, self.utilHeapWrite)
+    //   catch unreachable;
+    // self.heapRegions.putNoClobber(utilContextIdx+1, self.utilHeapRegionWrite)
+    //   catch unreachable;
+    // self.buffers.putNoClobber(utilContextIdx+1, self.utilBufferWrite)
+    //   catch unreachable;
 
-    self.renderingContext.createQueue(self, self.utilQueue);
-    self.renderingContext.createCommandPool(self, self.utilCommandPool);
-    self.utilCommandBuffer = (
-      self.constructCommandBufferWithId(
-        .{ .commandPool = utilContextIdx, },
-        utilContextIdx,
-      ) catch unreachable
-    );
-    self.renderingContext.createHeap(self, self.utilHeapRead);
-    self.renderingContext.createHeapRegion(self, self.utilHeapRegionRead);
-    self.renderingContext.createBuffer(self, self.utilBufferRead);
-    self.renderingContext.createHeap(self, self.utilHeapWrite);
-    self.renderingContext.createHeapRegion(self, self.utilHeapRegionWrite);
-    self.renderingContext.createBuffer(self, self.utilBufferWrite);
+    // self.renderingContext.createQueue(self, self.utilQueue);
+    // self.renderingContext.createCommandPool(self, self.utilCommandPool);
+    // self.utilCommandBuffer = (
+    //   self.constructCommandBufferWithId(
+    //     .{ .commandPool = utilContextIdx, },
+    //     utilContextIdx,
+    //   ) catch unreachable
+    // );
+    // self.renderingContext.createHeap(self, self.utilHeapRead);
+    // self.renderingContext.createHeapRegion(self, self.utilHeapRegionRead);
+    // self.renderingContext.createBuffer(self, self.utilBufferRead);
+    // self.renderingContext.createHeap(self, self.utilHeapWrite);
+    // self.renderingContext.createHeapRegion(self, self.utilHeapRegionWrite);
+    // self.renderingContext.createBuffer(self, self.utilBufferWrite);
 
     return self;
   }
@@ -231,7 +231,7 @@ pub const Context = struct {
     self.commandPools.deinit();
 
     // TODO why do I need to deinit this, shouldn't the above handle it?
-    self.utilCommandPool.commandBuffers.deinit();
+    // self.utilCommandPool.commandBuffers.deinit();
 
     self.heaps.deinit();
     self.heapRegions.deinit();
@@ -276,60 +276,62 @@ pub const Context = struct {
     imageIdx : mtr.image.Idx,
     writer : anytype
   ) @TypeOf(writer).Error !void {
-    std.debug.assert(@This().jsonWritingContext != null);
-    var self : * @This() = @This().jsonWritingContext.?;
+    _ = imageIdx;
+    _ = writer;
+    // std.debug.assert(@This().jsonWritingContext != null);
+    // var self : * @This() = @This().jsonWritingContext.?;
 
-    const image = self.images.getPtr(imageIdx);
-    std.debug.assert(image != null);
+    // const image = self.images.getPtr(imageIdx);
+    // std.debug.assert(image != null);
 
-    // TODO , I just assume that the image will fit inside the buffer
-    {
-      self.beginCommandBufferWriting(self.utilCommandBuffer);
-      defer self.endCommandBufferWriting(self.utilCommandBuffer);
+    // // TODO , I just assume that the image will fit inside the buffer
+    // {
+    //   self.beginCommandBufferWriting(self.utilCommandBuffer);
+    //   defer self.endCommandBufferWriting(self.utilCommandBuffer);
 
-      self.enqueueToCommandBuffer(
-        self.utilCommandBuffer,
-        mtr.command.TransferImageToBuffer {
-          .imageSrc = imageIdx,
-          .bufferDst = self.utilBufferRead.contextIdx,
-        },
-      ) catch unreachable;
-    }
+    //   self.enqueueToCommandBuffer(
+    //     self.utilCommandBuffer,
+    //     mtr.command.TransferImageToBuffer {
+    //       .imageSrc = imageIdx,
+    //       .bufferDst = self.utilBufferRead.contextIdx,
+    //     },
+    //   ) catch unreachable;
+    // }
 
-    self.submitCommandBufferToQueue(
-      self.utilQueue.contextIdx,
-      self.utilCommandBuffer
-    );
-    self.queueFlush(self.utilQueue.contextIdx);
+    // self.submitCommandBufferToQueue(
+    //   self.utilQueue.contextIdx,
+    //   self.utilCommandBuffer
+    // );
+    // self.queueFlush(self.utilQueue.contextIdx);
 
-    var mappedMemory : ? [*] u8 = null;
-    {
-      self.beginCommandBufferWriting(self.utilCommandBuffer);
-      defer self.endCommandBufferWriting(self.utilCommandBuffer);
+    // var mappedMemory : ? [*] u8 = null;
+    // {
+    //   self.beginCommandBufferWriting(self.utilCommandBuffer);
+    //   defer self.endCommandBufferWriting(self.utilCommandBuffer);
 
-      self.enqueueToCommandBuffer(
-        self.utilCommandBuffer,
-        mtr.command.MapMemory {
-          .buffer = self.utilBufferRead.contextIdx,
-          .mapping = .Read,
-          .offset = 0,
-          .length = image.?.getImageByteLength(),
-          .memory = &mappedMemory,
-        },
-      ) catch unreachable;
-    }
-    self.submitCommandBufferToQueue(
-      self.utilQueue.contextIdx,
-      self.utilCommandBuffer
-    );
-    self.queueFlush(self.utilQueue.contextIdx);
-    std.debug.assert(mappedMemory != null);
+    //   self.enqueueToCommandBuffer(
+    //     self.utilCommandBuffer,
+    //     mtr.command.MapMemory {
+    //       .buffer = self.utilBufferRead.contextIdx,
+    //       .mapping = .Read,
+    //       .offset = 0,
+    //       .length = image.?.getImageByteLength(),
+    //       .memory = &mappedMemory,
+    //     },
+    //   ) catch unreachable;
+    // }
+    // self.submitCommandBufferToQueue(
+    //   self.utilQueue.contextIdx,
+    //   self.utilCommandBuffer
+    // );
+    // self.queueFlush(self.utilQueue.contextIdx);
+    // std.debug.assert(mappedMemory != null);
 
-    try mtr.util.json.stringifyVariable(
-      "underlyingMemory",
-      mappedMemory.?[0 .. image.?.getImageByteLength()],
-      .{}, writer,
-    );
+    // try mtr.util.json.stringifyVariable(
+    //   "underlyingMemory",
+    //   mappedMemory.?[0 .. image.?.getImageByteLength()],
+    //   .{}, writer,
+    // );
   }
 
   // dumps the buffer binary
@@ -337,62 +339,64 @@ pub const Context = struct {
     bufferIdx : mtr.buffer.Idx,
     writer : anytype
   ) @TypeOf(writer).Error !void {
-    std.debug.assert(@This().jsonWritingContext != null);
-    var self : * @This() = @This().jsonWritingContext.?;
+    _ = bufferIdx;
+    _ = writer;
+    // std.debug.assert(@This().jsonWritingContext != null);
+    // var self : * @This() = @This().jsonWritingContext.?;
 
-    const buffer = self.buffers.getPtr(bufferIdx);
-    std.debug.assert(buffer != null);
+    // const buffer = self.buffers.getPtr(bufferIdx);
+    // std.debug.assert(buffer != null);
 
-    // TODO , I just assume that the src buffer will fit inside the dst buffer
-    {
-      self.beginCommandBufferWriting(self.utilCommandBuffer);
-      defer self.endCommandBufferWriting(self.utilCommandBuffer);
+    // // TODO , I just assume that the src buffer will fit inside the dst buffer
+    // {
+    //   self.beginCommandBufferWriting(self.utilCommandBuffer);
+    //   defer self.endCommandBufferWriting(self.utilCommandBuffer);
 
-      self.enqueueToCommandBuffer(
-        self.utilCommandBuffer,
-        mtr.command.TransferMemory {
-          .bufferSrc = bufferIdx,
-          .bufferDst = self.utilBufferRead.contextIdx,
-          .offsetSrc = 0, .offsetDst = 0,
-          .length = buffer.?.length,
-        },
-      ) catch unreachable;
-    }
+    //   self.enqueueToCommandBuffer(
+    //     self.utilCommandBuffer,
+    //     mtr.command.TransferMemory {
+    //       .bufferSrc = bufferIdx,
+    //       .bufferDst = self.utilBufferRead.contextIdx,
+    //       .offsetSrc = 0, .offsetDst = 0,
+    //       .length = buffer.?.length,
+    //     },
+    //   ) catch unreachable;
+    // }
 
-    self.submitCommandBufferToQueue(
-      self.utilQueue.contextIdx,
-      self.utilCommandBuffer
-    );
-    self.queueFlush(self.utilQueue.contextIdx);
+    // self.submitCommandBufferToQueue(
+    //   self.utilQueue.contextIdx,
+    //   self.utilCommandBuffer
+    // );
+    // self.queueFlush(self.utilQueue.contextIdx);
 
-    var mappedMemory : ? [*] u8 = null;
-    {
-      self.beginCommandBufferWriting(self.utilCommandBuffer);
-      defer self.endCommandBufferWriting(self.utilCommandBuffer);
+    // var mappedMemory : ? [*] u8 = null;
+    // {
+    //   self.beginCommandBufferWriting(self.utilCommandBuffer);
+    //   defer self.endCommandBufferWriting(self.utilCommandBuffer);
 
-      self.enqueueToCommandBuffer(
-        self.utilCommandBuffer,
-        mtr.command.MapMemory {
-          .buffer = self.utilBufferRead.contextIdx,
-          .mapping = .Read,
-          .offset = 0,
-          .length = buffer.?.length,
-          .memory = &mappedMemory,
-        },
-      ) catch unreachable;
-    }
-    self.submitCommandBufferToQueue(
-      self.utilQueue.contextIdx,
-      self.utilCommandBuffer
-    );
-    self.queueFlush(self.utilQueue.contextIdx);
-    std.debug.assert(mappedMemory != null);
+    //   self.enqueueToCommandBuffer(
+    //     self.utilCommandBuffer,
+    //     mtr.command.MapMemory {
+    //       .buffer = self.utilBufferRead.contextIdx,
+    //       .mapping = .Read,
+    //       .offset = 0,
+    //       .length = buffer.?.length,
+    //       .memory = &mappedMemory,
+    //     },
+    //   ) catch unreachable;
+    // }
+    // self.submitCommandBufferToQueue(
+    //   self.utilQueue.contextIdx,
+    //   self.utilCommandBuffer
+    // );
+    // self.queueFlush(self.utilQueue.contextIdx);
+    // std.debug.assert(mappedMemory != null);
 
-    try mtr.util.json.stringifyVariable(
-      "underlyingMemory",
-      mappedMemory.?[0 .. buffer.?.length],
-      .{}, writer,
-    );
+    // try mtr.util.json.stringifyVariable(
+    //   "underlyingMemory",
+    //   mappedMemory.?[0 .. buffer.?.length],
+    //   .{}, writer,
+    // );
   }
 
   pub fn jsonStringify(
@@ -599,6 +603,14 @@ pub const Context = struct {
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.constructImageWithId(ci, prevIdx);
+  }
+
+  pub fn imageMemoryRequirements(
+    self : * @This(),
+    imageIdx : mtr.image.Idx,
+  ) mtr.util.MemoryRequirements {
+    const image = self.images.get(imageIdx).?;
+    return self.renderingContext.imageMemoryRequirements(self.*, image);
   }
 
   pub fn getImageByteLength(self : @This(), idx : mtr.image.Idx) u64 {

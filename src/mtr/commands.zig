@@ -27,6 +27,12 @@ pub const TransferImageToBuffer = struct {
   actionType : mtr.command.ActionType = .transferImageToBuffer,
   imageSrc : mtr.image.Idx,
   bufferDst : mtr.buffer.Idx,
+  xOffset : u32 = 0, yOffset : u32 = 0, zOffset : u32 = 0,
+  width : u32, height : u32, depth : u32 = 1,
+  mipmapLayerBegin : u32 = 0,
+  mipmapLayerCount : u32 = 1, // if 0 assume all
+  arrayLayerBegin : u32 = 0,
+  arrayLayerCount : u32 = 1, // if 0 assume all
   // TODO subregions i guess
 };
 

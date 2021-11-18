@@ -132,7 +132,7 @@ test "buffer mapping + transfer" {
   {
     var mappedMemory = try mtrCtx.mapMemoryBuffer(.{
       .mapping = mtr.util.MappingType.Read,
-      .buffer = testBufferWrite,
+      .buffer = testBufferRead,
       .offset = 0, .length = @sizeOf(u8)*4,
     });
     defer mtrCtx.unmapMemory(mappedMemory);
@@ -144,180 +144,138 @@ test "buffer mapping + transfer" {
   }
 }
 
-// fn testImageUpload(
-  // mtrCtx : * mtr.Context,
-  // queue : mtr.queue.Idx,
-  // commandBuffer : mtr.command.BufferIdx,
-  // bufferRead : mtr.buffer.Idx,
-  // ci : mtr.image.ConstructInfo,
-// ) void {
-  // const testImage = mtrCtx.constructImage(ci)
-  //   catch unreachable;
-
-  // const rgbaClearValue = [_] f32 { 0.5, 0.75, 0.2, 1.0 };
-
-
-  // var mappedMemory : ? [*] u8 = null;
-  // {
-  //   mtrCtx.beginCommandBufferWriting(commandBuffer);
-  //   defer mtrCtx.endCommandBufferWriting();
-
-  //   mtrCtx.enqueueToCommandBuffer(
-  //     mtr.command.UploadTexelToImageMemory {
-  //       .image = testImage,
-  //       .rgba = rgbaClearValue,
-  //     },
-  //   ) catch unreachable;
-
-  //   mtrCtx.enqueueToCommandBuffer(
-  //     mtr.command.TransferImageToBuffer {
-  //       .imageSrc = testImage,
-  //       .bufferDst = bufferRead,
-  //     },
-  //   ) catch unreachable;
-  // }
-
-  // mtrCtx.submitCommandBufferToQueue(queue, commandBuffer);
-  // mtrCtx.queueFlush(queue);
-
-  // {
-  //   mtrCtx.beginCommandBufferWriting(commandBuffer);
-  //   defer mtrCtx.endCommandBufferWriting();
-
-  //   mtrCtx.enqueueToCommandBuffer(
-  //     mtr.command.MapMemory {
-  //       .buffer = bufferRead,
-  //       .mapping = .Read,
-  //       .offset = 0,
-  //       .length = 12,
-  //       .memory = &mappedMemory
-  //     },
-  //   ) catch unreachable;
-  // }
-
-  // mtrCtx.submitCommandBufferToQueue(queue, commandBuffer);
-  // mtrCtx.queueFlush(queue);
-
-  // std.debug.assert(mappedMemory != null);
-
-  // compareValues("0", mappedMemory.?[0], 127);
-  // compareValues("1", mappedMemory.?[1], @floatToInt(u8, 255.0*0.75));
-  // compareValues("2", mappedMemory.?[2], @floatToInt(u8, 255.0*0.2));
-  // compareValues("3", mappedMemory.?[3], 255);
-// }
-
 test "image upload - channels" {
-  // // tests channels component of 'command.UploadTexelToImageMemory'
-  // std.testing.log_level = .debug;
+  // tests channels component of 'command.UploadTexelToImageMemory'
+  std.testing.log_level = .debug;
 
-  // var debugAllocator =
-  //   std.heap.GeneralPurposeAllocator(
-  //     .{
-  //       .enable_memory_limit = true,
-  //       .safety = true,
-  //     }
-  //   ){};
-  // defer {
-  //   const leaked = debugAllocator.deinit();
-  //   if (leaked) std.log.info("{s}", .{"leaked memory"});
-  // }
+  var debugAllocator =
+    std.heap.GeneralPurposeAllocator(
+      .{
+        .enable_memory_limit = true,
+        .safety = true,
+      }
+    ){};
+  defer {
+    const leaked = debugAllocator.deinit();
+    if (leaked) std.log.info("{s}", .{"leaked memory"});
+  }
 
-  // var mtrCtx = (
-  //   mtr.Context.init(
-  //     &debugAllocator.allocator,
-  //     util.getBackend(),
-  //     mtr.backend.RenderingOptimizationLevel.Debug,
-  //   )
-  // );
-  // defer mtrCtx.deinit();
+  var mtrCtx = (
+    mtr.Context.init(
+      &debugAllocator.allocator,
+      util.getBackend(),
+      mtr.backend.RenderingOptimizationLevel.Debug,
+    )
+  );
+  defer mtrCtx.deinit();
 
-  // const queue : mtr.queue.Idx = (
-  //   try mtrCtx.constructQueue(.{
-  //     .workType = mtr.queue.WorkType{.transfer = true, .render = true},
-  //   })
-  // );
+  const queue : mtr.queue.Idx = (
+    try mtrCtx.constructQueue(.{
+      .workType = mtr.queue.WorkType{.transfer = true, .render = true},
+    })
+  );
 
-  // const commandPoolScratch : mtr.command.PoolIdx = (
-  //   try mtrCtx.constructCommandPool(.{
-  //     .flags = .{ .transient = true, .resetCommandBuffer = true },
-  //   })
-  // );
+  const commandPoolScratch : mtr.command.PoolIdx = (
+    try mtrCtx.constructCommandPool(.{
+      .flags = .{ .transient = true, .resetCommandBuffer = true },
+      .queue = queue,
+    })
+  );
 
-  // const commandBufferScratch : mtr.command.BufferIdx = (
-  //   try mtrCtx.constructCommandBuffer(.{
-  //     .commandPool = commandPoolScratch,
-  //   })
-  // );
+  const commandBufferScratch : mtr.command.BufferIdx = (
+    try mtrCtx.constructCommandBuffer(.{
+      .commandPool = commandPoolScratch,
+    })
+  );
+  _ = commandBufferScratch;
 
-  // const heap : mtr.heap.Idx = (
-  //   try mtrCtx.constructHeap(.{
-  //     .visibility = mtr.heap.Visibility.hostVisible,
-  //   })
-  // );
+  const heapRead : mtr.heap.Idx = (
+    try mtrCtx.constructHeap(.{
+      .visibility = mtr.heap.Visibility.hostVisible,
+    })
+  );
 
-  // const heapRegion : mtr.heap.RegionIdx = (
-  //   try mtrCtx.constructHeapRegion(.{
-  //     .allocatedHeap = heap,
-  //     .length = @sizeOf(u8)*32*32,
-  //   })
-  // );
+  var testBufferRead : mtr.buffer.Idx = 0;
+  {
+    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(heapRead);
+    defer _ = heapRegionAllocator.finish();
 
-  // const testBufferRead : mtr.buffer.Idx = (
-  //   try mtrCtx.constructBuffer(.{
-  //     .allocatedHeapRegion = heapRegion,
-  //     .offset = 0,
-  //     .length = 12,
-  //     .usage = mtr.buffer.Usage{ },
-  //     .queueSharing = mtr.queue.SharingUsage.exclusive,
-  //   })
-  // );
+    testBufferRead = try (
+      heapRegionAllocator.createBuffer(.{
+        .offset = 0,
+        .length = 1, // RGBA 4x4
+        .usage = mtr.buffer.Usage{ .transferDst=true },
+        .queueSharing = mtr.queue.SharingUsage.exclusive,
+      })
+    );
+  }
+  _ = testBufferRead;
 
-  // const heapImage : mtr.heap.Idx = (
-  //   try mtrCtx.constructHeap(.{
-  //     .visibility = mtr.heap.Visibility.deviceOnly,
-  //   })
-  // );
+  var heapDevice : mtr.heap.Idx = (
+    try mtrCtx.constructHeap(.{
+      // .visibility = mtr.heap.Visibility.deviceOnly,
+      .visibility = mtr.heap.Visibility.hostVisible,
+    })
+  );
 
-  // const heapRegionImage : mtr.heap.RegionIdx = (
-  //   try mtrCtx.constructHeapRegion(.{
-  //     .allocatedHeap = heapImage,
-  //     .length = @sizeOf(u8)*32*32,
-  //   })
-  // );
+  var testImage : mtr.image.Idx = 0;
+  {
+    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(heapDevice);
+    defer _ = heapRegionAllocator.finish();
 
-  // // const widths  = [_] u64 { 1, 2, 4 };
-  // // const heights = [_] u64 { 1, 2, 4 };
-  // // const depths  = [_] u64 { 1, 2, 4, 8, 16, 32, 128, };
-  // const widths  = [_] u64 { 4 };
-  // const heights = [_] u64 { 4 };
-  // const channels = [_] mtr.image.Channel {
-  //   // mtr.image.Channel.R, mtr.image.Channel.RGB, mtr.image.Channel.RGBA
-  //   mtr.image.Channel.RGBA
-  // };
+    testImage = try (
+      heapRegionAllocator.createImage(.{
+        .offset = 0,
+        .width = 1, .height = 1, .depth = 1,
+        .samplesPerTexel = mtr.image.Sample.s1,
+        .arrayLayers = 1,
+        .mipmapLevels = 1,
+        .byteFormat = mtr.image.ByteFormat.uint8,
+        .channels = mtr.image.Channel.RGBA,
+        .normalized = true,
+        .queueSharing = mtr.queue.SharingUsage.exclusive,
+      })
+    );
+  }
 
+  {
+    var commandBufferRecorder = (
+      mtrCtx.createCommandBufferRecorder(commandBufferScratch)
+    );
+    defer commandBufferRecorder.finish();
 
-  // for (widths) |width| {
-  // for (heights) |height| {
-  // for (channels) |channel| {
-  //   testImageUpload(
-  //     &mtrCtx,
-  //     queue,
-  //     commandBufferScratch,
-  //     testBufferRead,
-  //     .{
-  //       .allocatedHeapRegion = heapRegionImage,
-  //       .offset = 0,
-  //       .width = width, .height = height, .depth = 1,
-  //       .samplesPerTexel = mtr.image.Sample.s1,
-  //       .arrayLayers = 1,
-  //       .mipmapLevels = 1,
-  //       .byteFormat = mtr.image.ByteFormat.uint8,
-  //       .channels = channel,
-  //       .normalized = true,
-  //       .queueSharing = mtr.queue.SharingUsage.exclusive,
-  //     },
-  //   );
-  // }}}
+    const rgbaClearValue = [_] f32 { 0.5, 0.75, 0.2, 1.0 };
+    commandBufferRecorder.append(
+      mtr.command.UploadTexelToImageMemory {
+        .image = testImage,
+        .rgba = rgbaClearValue,
+      },
+    );
+
+    commandBufferRecorder.append(
+      mtr.command.TransferImageToBuffer {
+        .imageSrc = testImage,
+        .bufferDst = testBufferRead,
+        .width = 1, .height = 1, //TODO FIXME depth?
+      },
+    );
+  }
+
+  mtrCtx.submitCommandBufferToQueue(queue, commandBufferScratch);
+  mtrCtx.queueFlush(queue);
+
+  {
+    var mappedMemory = try mtrCtx.mapMemoryBuffer(.{
+      .mapping = mtr.util.MappingType.Read,
+      .buffer = testBufferRead,
+      .offset = 0, .length = 1, // RGBA 4x4
+    });
+    defer mtrCtx.unmapMemory(mappedMemory);
+
+    std.log.info(
+      "mapped memory {} {}",
+      .{mappedMemory.ptr[0], mappedMemory.ptr[1]});
+  }
 }
 
 test "pipeline - triangle" {

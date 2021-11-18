@@ -140,6 +140,21 @@ pub const RenderingContext = union(RenderingContextType) {
     }
   }
 
+  pub fn imageMemoryRequirements(
+    self : * @This(),
+    context : mtr.Context,
+    primitive : mtr.image.Primitive,
+  ) mtr.util.MemoryRequirements {
+    return switch (self.*) {
+      .clRasterizer => (
+        self.clRasterizer.imageMemoryRequirements(context, primitive)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.imageMemoryRequirements(context, primitive)
+      )
+    };
+  }
+
   pub fn createCommandBuffer(
     self : * @This(),
     context : mtr.Context,
