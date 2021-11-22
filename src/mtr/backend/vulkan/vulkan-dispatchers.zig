@@ -28,6 +28,7 @@ pub const VulkanDeviceDispatch = vk.DeviceWrapper(&.{
   .allocateDescriptorSets ,
   .allocateMemory,
   .beginCommandBuffer,
+  .bindImageMemory,
   .bindBufferMemory,
   .cmdBeginRenderPass,
   .cmdBindDescriptorSets ,

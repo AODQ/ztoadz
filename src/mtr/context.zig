@@ -532,6 +532,21 @@ pub const Context = struct {
     self.renderingContext.bindBufferToSubheap(self.*, buffer.*);
   }
 
+  pub fn bindImageToSubheap(
+    self : * @This(),
+    imageIdx : mtr.image.Idx,
+    offset : usize,
+    heapRegion : mtr.heap.RegionIdx,
+  ) void {
+    var image = self.images.getPtr(imageIdx).?;
+    // TODO assert allocated heap region is null
+    std.debug.assert(image.allocatedHeapRegion == 0);
+    std.debug.assert(self.heapRegions.getPtr(heapRegion) != null);
+    image.allocatedHeapRegion = heapRegion;
+    image.offset = offset;
+    self.renderingContext.bindImageToSubheap(self.*, image.*);
+  }
+
   pub fn constructBufferWithId(
     self : * @This(),
     ci : mtr.buffer.ConstructInfo,
@@ -887,9 +902,9 @@ pub const Context = struct {
   // -- utils ------------------------------------------------------------------
   pub fn createHeapRegionAllocator(
     self : * @This(),
-    heap : mtr.heap.Idx,
+    visibility : mtr.heap.Visibility,
   ) mtr.util.HeapRegionAllocator {
-    return mtr.util.HeapRegionAllocator.init(self, heap);
+    return mtr.util.HeapRegionAllocator.init(self, visibility);
   }
 
   pub fn createCommandBufferRecorder(

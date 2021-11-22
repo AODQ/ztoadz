@@ -29,7 +29,7 @@ pub fn toFormat(image : mtr.image.Primitive) vk.Format {
 
 pub fn toSampleCountFlags(image : mtr.image.Primitive) vk.SampleCountFlags {
   return switch (image.samplesPerTexel) {
-    .s1 => vk.SampleCountFlags.fromInt(0),
+    .s1 => vk.SampleCountFlags { .@"1bit" = true },
   };
 }
 
@@ -684,11 +684,11 @@ pub const Rasterizer = struct {
       .glfwWindow = window,
     };
 
-    // errdefer self.vki.destroyinstance(self.instance, null);
-    // errdefer {
-    //   for (self.devices.items) |device| device.deinit();
-    //   self.devices.deinit();
-    // }
+    errdefer self.vki.destroyinstance(self.instance, null);
+    errdefer {
+      for (self.devices.items) |device| device.deinit();
+      self.devices.deinit();
+    }
 
     return self;
   }
@@ -816,6 +816,7 @@ pub const Rasterizer = struct {
           vk.MemoryPropertyFlags { .deviceLocalBit = true },
         )
       ) {
+        std.log.info("it {}", .{memoryTypeIt});
         deviceLocalHeap = Heap {
           .memoryType = memProps.memoryTypes[memoryTypeIt],
           .memoryTypeIndex = memoryTypeIt,
@@ -960,6 +961,20 @@ pub const Rasterizer = struct {
       &memoryRequirement,
     );
 
+    std.log.info(
+      "image mem byte {}",
+      .{memoryRequirement.memoryRequirements.memoryTypeBits}
+    );
+
+    std.log.info(
+      "thus, type is {}",
+      .{(memoryRequirement.memoryRequirements.memoryTypeBits & (@intCast(u32, 1) << @intCast(u5, 10)))}
+    );
+
+    std.log.info(
+      "thus, or type is {}",
+      .{(memoryRequirement.memoryRequirements.memoryTypeBits & (@intCast(u32, 1) << @intCast(u5, 7)))}
+    );
     return .{
       .length = memoryRequirement.memoryRequirements.size,
       .alignment = memoryRequirement.memoryRequirements.alignment,
@@ -1125,7 +1140,7 @@ pub const Rasterizer = struct {
 
         const subresourceRange = (
           vk.ImageSubresourceRange {
-            .aspectMask = .{},
+            .aspectMask = .{ .colorBit = true },
             .baseMipLevel = action.mipmapLayerBegin,
             .levelCount = action.mipmapLayerCount,
             .baseArrayLayer = action.arrayLayerBegin,
@@ -1221,7 +1236,7 @@ pub const Rasterizer = struct {
         var vkImage = self.images.get(action.image).?;
         const subresourceRange = (
           vk.ImageSubresourceRange {
-            .aspectMask = .{},
+            .aspectMask = .{ .colorBit = true },
             .baseMipLevel = 0,
             .levelCount = 1,
             .baseArrayLayer = 0,

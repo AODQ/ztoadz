@@ -110,6 +110,13 @@ pub const Rasterizer = struct {
   ) void {
   }
 
+  pub fn bindImageToSubheap(
+    _ : * @This(),
+    _ : mtr.Context,
+    _ : mtr.image.Primitive,
+  ) void {
+  }
+
   pub fn bufferMemoryRequirements(
     _ : * @This(),
     _ : mtr.Context,

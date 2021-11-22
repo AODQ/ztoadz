@@ -52,15 +52,9 @@ test "buffer mapping + transfer" {
     })
   );
 
-  const heapWrite : mtr.heap.Idx = (
-    try mtrCtx.constructHeap(.{
-      .visibility = mtr.heap.Visibility.hostWritable,
-    })
-  );
-
   var testBufferWrite : mtr.buffer.Idx = 0;
   {
-    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(heapWrite);
+    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.hostWritable);
     defer _ = heapRegionAllocator.finish();
 
     testBufferWrite = try (
@@ -88,15 +82,9 @@ test "buffer mapping + transfer" {
   }
 
   // -- now construct a readable buffer
-  const heapRead : mtr.heap.Idx = (
-    try mtrCtx.constructHeap(.{
-      .visibility = mtr.heap.Visibility.hostVisible,
-    })
-  );
-
   var testBufferRead : mtr.buffer.Idx = 0;
   {
-    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(heapRead);
+    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.hostVisible);
     defer _ = heapRegionAllocator.finish();
 
     testBufferRead = try (
@@ -189,15 +177,9 @@ test "image upload - channels" {
   );
   _ = commandBufferScratch;
 
-  const heapRead : mtr.heap.Idx = (
-    try mtrCtx.constructHeap(.{
-      .visibility = mtr.heap.Visibility.hostVisible,
-    })
-  );
-
   var testBufferRead : mtr.buffer.Idx = 0;
   {
-    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(heapRead);
+    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.hostVisible);
     defer _ = heapRegionAllocator.finish();
 
     testBufferRead = try (
@@ -211,16 +193,9 @@ test "image upload - channels" {
   }
   _ = testBufferRead;
 
-  var heapDevice : mtr.heap.Idx = (
-    try mtrCtx.constructHeap(.{
-      // .visibility = mtr.heap.Visibility.deviceOnly,
-      .visibility = mtr.heap.Visibility.hostVisible,
-    })
-  );
-
   var testImage : mtr.image.Idx = 0;
   {
-    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(heapDevice);
+    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
     defer _ = heapRegionAllocator.finish();
 
     testImage = try (

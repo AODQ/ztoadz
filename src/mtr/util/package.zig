@@ -39,7 +39,7 @@ pub const MemoryRequirements = struct {
 };
 
 pub const HeapRegionAllocator = struct {
-  heap : mtr.heap.Idx,
+  visbility : mtr.heap.Visibility,
   suballocations : std.ArrayList(AllocatorInfo),
   trackingOffset : usize,
   mtrCtx : * mtr.Context,
@@ -79,7 +79,12 @@ pub const HeapRegionAllocator = struct {
             heapRegion,
           );
         },
-        .image => |_| {
+        .image => |image| {
+          self.mtrCtx.bindImageToSubheap(
+            image.image,
+            image.relativeOffset,
+            heapRegion,
+          );
         }
       }
     }

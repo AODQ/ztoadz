@@ -80,6 +80,21 @@ pub const RenderingContext = union(RenderingContextType) {
     }
   }
 
+  pub fn bindImageToSubheap(
+    self : * @This(),
+    context : mtr.Context,
+    primitive : mtr.image.Primitive,
+  ) void {
+    switch (self.*) {
+      .clRasterizer => (
+        self.clRasterizer.bindImageToSubheap(context, primitive)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.bindImageToSubheap(context, primitive)
+      )
+    }
+  }
+
   pub fn createBuffer(
     self : * @This(),
     context : mtr.Context,
@@ -102,8 +117,8 @@ pub const RenderingContext = union(RenderingContextType) {
   ) mtr.util.MemoryRequirements {
     return switch (self.*) {
       .clRasterizer => (
-        self.clRasterizer.bufferMemoryRequirements(context, primitive)
-      ),
+          self.clRasterizer.bufferMemoryRequirements(context, primitive)
+          ),
       .vkRasterizer => (
         self.vkRasterizer.bufferMemoryRequirements(context, primitive)
       )
