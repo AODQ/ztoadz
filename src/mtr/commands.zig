@@ -5,8 +5,9 @@ pub const PoolIdx = u64;
 pub const BufferIdx = u64;
 
 pub const ActionType = enum {
-  transferMemory,
+  pipelineBarrier,
   transferImageToBuffer,
+  transferMemory,
   uploadTexelToImageMemory,
 
   pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
@@ -43,11 +44,44 @@ pub const TransferImage = struct {
   srcDimX : u64, srcDimY : u64, srcDimZ : u64,
   srcArrayLayer : u64, srcMipmap : u64,
 
-  dstDimX : u64, dstDimY : u64, dstDimZ : u64,
+  dstOffX : u64, dstOffY : u64, dstOffZ : u64,
   dstArrayLayer : u64, dstMipmap : u64,
 
   width : u64, height : u64, depth : u64,
   layers : u64, mipmaps : u64
+};
+
+pub const PipelineBarrier = struct {
+  actionType : mtr.command.ActionType = .pipelineBarrier,
+  srcStage : mtr.pipeline.StageFlags,
+  dstStage : mtr.pipeline.StageFlags,
+  imageTapes : [] ImageTapeAction = &[_] ImageTapeAction {},
+  bufferTapes : [] BufferTapeAction = &[_] BufferTapeAction {},
+
+  pub const ImageTapeAction = struct {
+    tape : * ImageTape,
+    layout : mtr.image.Layout,
+    accessFlags : mtr.AccessFlags,
+  };
+
+  pub const BufferTapeAction = struct {
+    tape : * BufferTape,
+    accessFlags : mtr.AccessFlags,
+  };
+};
+
+pub const BufferTape = struct {
+  buffer : mtr.buffer.Idx,
+  offset : usize = 0,
+  length : usize = 0, // implied to be entire buffer
+  accessFlags : mtr.AccessFlags = .{},
+};
+
+// tapes allow you to keep track of the current state while recording commands
+pub const ImageTape = struct {
+  image : mtr.image.Idx,
+  layout : mtr.image.Layout = .uninitialized,
+  accessFlags : mtr.AccessFlags = .{},
 };
 
 pub const imageRangeEnd : i64 = -1;
@@ -57,7 +91,7 @@ pub const imageRangeEnd : i64 = -1;
 pub const UploadTexelToImageMemory = struct {
   // TODO vectors duh
   actionType : mtr.command.ActionType = .uploadTexelToImageMemory,
-  image : mtr.image.Idx,
+  imageTape : mtr.command.ImageTape,
   rgba : [4] f32,
   dimXBegin : i64 = 0, dimXEnd : i64 = imageRangeEnd,
   dimYBegin : i64 = 0, dimYEnd : i64 = imageRangeEnd,
@@ -74,6 +108,7 @@ pub const UploadTexelToImageMemory = struct {
 pub const Action = union(ActionType) {
   transferMemory : mtr.command.TransferMemory,
   transferImageToBuffer : mtr.command.TransferImageToBuffer,
+  pipelineBarrier : mtr.command.PipelineBarrier,
   uploadTexelToImageMemory : mtr.command.UploadTexelToImageMemory,
 
   // pub fn jsonStringify(

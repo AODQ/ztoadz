@@ -484,6 +484,27 @@ pub const Context = struct {
     return self.constructHeapWithId(ci, prevIdx);
   }
 
+  pub fn createHeapFromMemoryRequirements(
+    self : * @This(),
+    ci : mtr.heap.ConstructInfo,
+    memoryRequirements : [] mtr.util.MemoryRequirements,
+  ) !mtr.heap.Idx {
+    const idx = self.allocIdx;
+    self.allocIdx += 1;
+    const heap = mtr.heap.Primitive {
+      .visibility = ci.visibility,
+      .contextIdx = idx,
+    };
+
+    self.renderingContext.createHeapFromMemoryRequirements(
+      self.*, heap, memoryRequirements,
+    );
+
+    try self.heaps.putNoClobber(idx, heap);
+
+    return heap.contextIdx;
+  }
+
   pub fn constructHeapRegionWithId(
     self : * @This(),
     ci : mtr.heap.RegionConstructInfo,
@@ -806,6 +827,8 @@ pub const Context = struct {
       action = .{.transferMemory = command};
     } else if (@TypeOf(command) == mtr.command.TransferImageToBuffer) {
       action = .{.transferImageToBuffer = command};
+    } else if (@TypeOf(command) == mtr.command.PipelineBarrier) {
+      action = .{.pipelineBarrier = command};
     } else if (@TypeOf(command) == mtr.command.UploadTexelToImageMemory) {
       action = .{.uploadTexelToImageMemory = command};
     } else {
@@ -899,18 +922,53 @@ pub const Context = struct {
     // return buffer.contextIdx;
   }
 
-  // -- utils ------------------------------------------------------------------
-  pub fn createHeapRegionAllocator(
+  pub fn createShaderModuleWithId(
     self : * @This(),
-    visibility : mtr.heap.Visibility,
-  ) mtr.util.HeapRegionAllocator {
-    return mtr.util.HeapRegionAllocator.init(self, visibility);
+    ci : mtr.shader.ConstructInfo,
+    idx : mtr.shader.Idx,
+  ) !mtr.shaderModule.Idx {
+    const shaderModule = mtr.shader.Module {
+      .contextIdx = idx,
+    };
+    // TODO assert NO overlap
+
+    self.renderingContext.createShaderModule(self.*, shaderModule, ci.memory);
+
+    try self.shaderModules.putNoClobber(idx, shaderModule);
+
+    return shaderModule.contextIdx;
   }
 
-  pub fn createCommandBufferRecorder(
-    self : * @This(),
-    commandBuffer : mtr.command.BufferIdx,
-  ) mtr.util.CommandBufferRecorder {
-    return mtr.util.CommandBufferRecorder.init(self, commandBuffer);
+  pub fn createShaderModule(
+    self : * @This(), ci : mtr.shader.ConstructInfo
+  ) !mtr.shader.Idx {
+    const prevIdx = self.allocIdx;
+    self.allocIdx += 1;
+    return self.createShaderModuleWithId(ci, prevIdx);
   }
+
+  // pub fn createDescriptorSetPoolWithId(
+  //   self : *@This(),
+  //   id : u64
+  // ) mtr.pipeline.DescriptorSetPoolIdx {
+  //   self.renderingContext.createDescriptorSetPool(self.*, id);
+
+  //   return id;
+  // }
+
+  // fn createDescriptorSetPool(
+  //   self : * @This(),
+  //   id : u64,
+  // ) mtr.pipeline.DescriptorSetPoolIdx {
+  //   const prevIdx = self.allocIdx;
+  //   self.allocIdx += 1;
+  //   return self.createDescriptorSetPoolWithId(id);
+  // }
+
+  // pub fn createDescriptorSetWriter(
+  //   self : * @This(),
+  // ) mtr.pipeline.DescriptorSetWriter {
+  //   return mtr.pipeline.DescriptorSetWriter.init(self);
+  // }
+
 };

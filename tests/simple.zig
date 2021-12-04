@@ -175,7 +175,6 @@ test "image upload - channels" {
       .commandPool = commandPoolScratch,
     })
   );
-  _ = commandBufferScratch;
 
   var testBufferRead : mtr.buffer.Idx = 0;
   {
@@ -185,13 +184,12 @@ test "image upload - channels" {
     testBufferRead = try (
       heapRegionAllocator.createBuffer(.{
         .offset = 0,
-        .length = 1, // RGBA 4x4
+        .length = 4*4*4*4, // bytes, rgba, width, height
         .usage = mtr.buffer.Usage{ .transferDst=true },
         .queueSharing = mtr.queue.SharingUsage.exclusive,
       })
     );
   }
-  _ = testBufferRead;
 
   var testImage : mtr.image.Idx = 0;
   {
@@ -201,7 +199,7 @@ test "image upload - channels" {
     testImage = try (
       heapRegionAllocator.createImage(.{
         .offset = 0,
-        .width = 1, .height = 1, .depth = 1,
+        .width = 4, .height = 4, .depth = 1,
         .samplesPerTexel = mtr.image.Sample.s1,
         .arrayLayers = 1,
         .mipmapLevels = 1,
@@ -213,17 +211,76 @@ test "image upload - channels" {
     );
   }
 
+  var testBufferReadTape = mtr.command.BufferTape { .buffer = testBufferRead, };
+  var testImageTape = mtr.command.ImageTape { .image = testImage, };
+
   {
     var commandBufferRecorder = (
       mtrCtx.createCommandBufferRecorder(commandBufferScratch)
     );
     defer commandBufferRecorder.finish();
 
+    commandBufferRecorder.append(
+      mtr.command.PipelineBarrier {
+        .srcStage = .{ .begin = true },
+        .dstStage = .{ .transfer = true },
+        .imageTapes = (
+          &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+            mtr.command.PipelineBarrier.ImageTapeAction {
+              .tape = &testImageTape,
+              .layout = .transferDst,
+              .accessFlags = .{ .transferWrite = true },
+            },
+          }
+        ),
+      },
+    );
+
     const rgbaClearValue = [_] f32 { 0.5, 0.75, 0.2, 1.0 };
     commandBufferRecorder.append(
       mtr.command.UploadTexelToImageMemory {
-        .image = testImage,
+        .imageTape = testImageTape,
         .rgba = rgbaClearValue,
+      },
+    );
+
+    commandBufferRecorder.append(
+      mtr.command.PipelineBarrier {
+        .srcStage = .{ .transfer = true },
+        .dstStage = .{ .transfer = true },
+        .imageTapes = (
+          &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+            mtr.command.PipelineBarrier.ImageTapeAction {
+              .tape = &testImageTape,
+              .layout = .transferDst,
+              .accessFlags = .{ .transferWrite = true },
+            },
+          }
+        ),
+      },
+    );
+
+    commandBufferRecorder.append(
+      mtr.command.PipelineBarrier {
+        .srcStage = .{ .transfer = true },
+        .dstStage = .{ .transfer = true },
+        .bufferTapes = (
+          &[_] mtr.command.PipelineBarrier.BufferTapeAction {
+            mtr.command.PipelineBarrier.BufferTapeAction {
+              .tape = &testBufferReadTape,
+              .accessFlags = .{ .transferWrite = true },
+            },
+          }
+        ),
+        .imageTapes = (
+          &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+            mtr.command.PipelineBarrier.ImageTapeAction {
+              .tape = &testImageTape,
+              .layout = .transferSrc,
+              .accessFlags = .{ .transferRead = true },
+            },
+          }
+        ),
       },
     );
 
@@ -231,7 +288,37 @@ test "image upload - channels" {
       mtr.command.TransferImageToBuffer {
         .imageSrc = testImage,
         .bufferDst = testBufferRead,
-        .width = 1, .height = 1, //TODO FIXME depth?
+        .width = 4, .height = 4,
+      },
+    );
+
+    commandBufferRecorder.append(
+      mtr.command.PipelineBarrier {
+        .srcStage = .{ .transfer = true },
+        .dstStage = .{ .transfer = true },
+        .bufferTapes = (
+          &[_] mtr.command.PipelineBarrier.BufferTapeAction {
+            mtr.command.PipelineBarrier.BufferTapeAction {
+              .tape = &testBufferReadTape,
+              .accessFlags = .{ .transferWrite = true },
+            },
+          }
+        ),
+      },
+    );
+
+    commandBufferRecorder.append(
+      mtr.command.PipelineBarrier {
+        .srcStage = .{ .transfer = true },
+        .dstStage = .{ .host = true },
+        .bufferTapes = (
+          &[_] mtr.command.PipelineBarrier.BufferTapeAction {
+            mtr.command.PipelineBarrier.BufferTapeAction {
+              .tape = &testBufferReadTape,
+              .accessFlags = .{ .hostRead = true },
+            },
+          }
+        ),
       },
     );
   }
@@ -243,17 +330,71 @@ test "image upload - channels" {
     var mappedMemory = try mtrCtx.mapMemoryBuffer(.{
       .mapping = mtr.util.MappingType.Read,
       .buffer = testBufferRead,
-      .offset = 0, .length = 1, // RGBA 4x4
+      .offset = 0, .length = 4*4*4*4, // RGBA 4x4
     });
     defer mtrCtx.unmapMemory(mappedMemory);
 
+    var mappedMemoryF32 = @ptrCast([*] f32, @alignCast(4, mappedMemory.ptr));
+
     std.log.info(
       "mapped memory {} {}",
-      .{mappedMemory.ptr[0], mappedMemory.ptr[1]});
+      .{mappedMemoryF32[0], mappedMemoryF32[1]});
   }
 }
 
-test "pipeline - triangle" {
-  // rasterizes a simple triangle
-  // tests the 'rasterize' command
+test "pipeline - UVCoord To Screen" {
+  // // rasterizes a simple triangle
+  // // tests the 'rasterize' command
+
+  // const moduleFileData align(@alignOf(u32)) = (
+  //   @embedFile("../shaders/raytrace.comp")
+  // );
+
+  // std.testing.log_level = .debug;
+
+  // var debugAllocator =
+  //   std.heap.GeneralPurposeAllocator(
+  //     .{
+  //       .enable_memory_limit = true,
+  //       .safety = true,
+  //     }
+  //   ){};
+  // defer {
+  //   const leaked = debugAllocator.deinit();
+  //   if (leaked) std.log.info("{s}", .{"leaked memory"});
+  // }
+
+  // var mtrCtx = (
+  //   mtr.Context.init(
+  //     &debugAllocator.allocator,
+  //     util.getBackend(),
+  //     mtr.backend.RenderingOptimizationLevel.Debug,
+  //   )
+  // );
+  // defer mtrCtx.deinit();
+
+  // const queue : mtr.queue.Idx = (
+  //   try mtrCtx.constructQueue(.{
+  //     .workType = mtr.queue.WorkType{.transfer = true, .render = true},
+  //   })
+  // );
+
+  // const commandPoolScratch : mtr.command.PoolIdx = (
+  //   try mtrCtx.constructCommandPool(.{
+  //     .flags = .{ .transient = true, .resetCommandBuffer = true },
+  //     .queue = queue,
+  //   })
+  // );
+
+  // const commandBufferScratch : mtr.command.BufferIdx = (
+  //   try mtrCtx.constructCommandBuffer(.{
+  //     .commandPool = commandPoolScratch,
+  //   })
+  // );
+
+  // const shaderModule = (
+  //   mtrCtx.createShaderModule(
+  //     mtr.shader.ConstructInfo(.{.data = moduleFileData})
+  //   )
+  // );
 }

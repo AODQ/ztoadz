@@ -122,7 +122,7 @@ const CommandTransferImage = struct {
   srcDimX : u64, srcDimY : u64, srcDimZ : u64,
   srcArrayLayer : u64, srcMipmap : u64,
 
-  dstDimX : u64, dstDimY : u64, dstDimZ : u64,
+  dstOffX : u64, dstOffY : u64, dstOffZ : u64,
   dstArrayLayer : u64, dstMipmap : u64,
 
   width : u64, height : u64, depth : u64,

@@ -36,17 +36,21 @@ pub const MappedMemory = struct {
 pub const MemoryRequirements = struct {
   length : usize,
   alignment : usize,
+  typeBits : u32,
 };
 
 pub const HeapRegionAllocator = struct {
-  visbility : mtr.heap.Visibility,
+  visibility : mtr.heap.Visibility,
   suballocations : std.ArrayList(AllocatorInfo),
   trackingOffset : usize,
   mtrCtx : * mtr.Context,
 
-  pub fn init(ctx : * mtr.Context, heap : mtr.heap.Idx) HeapRegionAllocator {
+  pub fn init(
+    ctx : * mtr.Context,
+    visibility : mtr.heap.Visibility,
+  ) HeapRegionAllocator {
     return .{
-      .heap = heap,
+      .visibility = visibility,
       .suballocations = (
         std.ArrayList(AllocatorInfo).init(ctx.primitiveAllocator)
       ),
@@ -62,10 +66,40 @@ pub const HeapRegionAllocator = struct {
 
     std.log.info("tracking offset: {}", .{self.trackingOffset});
 
+    var memoryRequirements = (
+      std
+        .ArrayList(mtr.util.MemoryRequirements)
+        .init(self.mtrCtx.primitiveAllocator)
+    );
+    defer memoryRequirements.deinit();
+
+    for (self.suballocations.items) |suballocation| {
+      switch (suballocation) {
+        .buffer => |buffer| {
+          (memoryRequirements.addOne() catch unreachable).* = (
+            buffer.memoryRequirements
+          );
+        },
+        .image => |image| {
+          (memoryRequirements.addOne() catch unreachable).* = (
+            image.memoryRequirements
+          );
+        },
+      }
+    }
+
+    // get the appropiate heap
+    const heap : mtr.heap.Idx = (
+      self.mtrCtx.createHeapFromMemoryRequirements(
+        .{ .visibility = self.visibility },
+        memoryRequirements.items,
+      ) catch unreachable
+    );
+
     // create a subheap to allocate all these resources under
     const heapRegion : mtr.heap.RegionIdx = (
       self.mtrCtx.constructHeapRegion(.{
-        .allocatedHeap = self.heap,
+        .allocatedHeap = heap,
         .length = self.trackingOffset,
       }) catch unreachable
     );
@@ -108,8 +142,9 @@ pub const HeapRegionAllocator = struct {
     );
     (try self.suballocations.addOne()).* = .{
       .buffer = .{
-        .buffer = buffer,
+        .memoryRequirements = memoryRequirements,
         .relativeOffset = self.trackingOffset,
+        .buffer = buffer,
       }
     };
     self.trackingOffset += memoryRequirements.length;
@@ -131,8 +166,9 @@ pub const HeapRegionAllocator = struct {
     );
     (try self.suballocations.addOne()).* = .{
       .image = .{
-        .image = image,
+        .memoryRequirements = memoryRequirements,
         .relativeOffset = self.trackingOffset,
+        .image = image,
       }
     };
     self.trackingOffset += memoryRequirements.length;
@@ -141,13 +177,15 @@ pub const HeapRegionAllocator = struct {
   }
 
   const BufferInfo = struct {
-    buffer : mtr.buffer.Idx,
+    memoryRequirements : mtr.util.MemoryRequirements,
     relativeOffset : usize,
+    buffer : mtr.buffer.Idx,
   };
 
   const ImageInfo = struct {
-    image : mtr.image.Idx,
+    memoryRequirements : mtr.util.MemoryRequirements,
     relativeOffset : usize,
+    image : mtr.image.Idx,
   };
 
   const AllocatorTag = enum {

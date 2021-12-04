@@ -5,3 +5,5 @@
 *.spv
 vim.custom
 README.md
+zig-cache/
+zig-out/

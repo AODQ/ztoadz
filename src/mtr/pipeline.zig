@@ -5,6 +5,7 @@ const std = @import("std");
 //   user
 
 pub const Idx = u64;
+pub const DescriptorSetPoolIdx = u64;
 
 pub const Layout = struct {
   descriptors : std.AutoHashMap(u64, mtr.descriptor.Type),
@@ -32,9 +33,21 @@ pub const ConstructInfo = struct {
   // TODO winding order, idk
 };
 
-
 pub const RasterizePrimitive = struct {
   layout : mtr.pipeline.Layout,
   depthTestEnable : bool,
   depthWriteEnable : bool,
 };
+
+pub const StageFlags = packed struct {
+  begin : bool = true,
+  computeShader : bool = true,
+  transfer : bool = true,
+  host : bool = true,
+  end : bool = true,
+};
+
+// pub const DescriptorSetWriter = struct {
+//   pub fn init(ctx : * mtr.Context) @This() {
+//   }
+// };

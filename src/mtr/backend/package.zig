@@ -50,6 +50,26 @@ pub const RenderingContext = union(RenderingContextType) {
     }
   }
 
+  pub fn createHeapFromMemoryRequirements(
+    self : * @This(),
+    context : mtr.Context,
+    primitive : mtr.heap.Primitive,
+    memoryRequirement : [] mtr.util.MemoryRequirements,
+  ) void {
+    switch (self.*) {
+      .clRasterizer => (
+        self.clRasterizer.createHeapFromMemoryRequirements(
+          context, primitive, memoryRequirement,
+        )
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.createHeapFromMemoryRequirements(
+          context, primitive, memoryRequirement,
+        )
+      )
+    }
+  }
+
   pub fn createHeapRegion(
     self : * @This(),
     context : mtr.Context,
@@ -212,6 +232,22 @@ pub const RenderingContext = union(RenderingContextType) {
       .vkRasterizer => (
         self.vkRasterizer.endCommandBufferWriting(context, primitive)
       ),
+    }
+  }
+
+  pub fn createShaderModule(
+    self : * @This(),
+    context : mtr.Context,
+    primitive : mtr.shader.Module,
+    data : [] u64,
+  ) void {
+    switch (self.*) {
+      .clRasterizer => (
+        self.clRasterizer.createShaderModule(context, primitive, data)
+      ),
+      .vkRasterizer => (
+        self.vkRasterizer.createQueue(context, primitive, data)
+      )
     }
   }
 

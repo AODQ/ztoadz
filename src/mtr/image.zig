@@ -100,3 +100,10 @@ pub const Primitive = struct {
     try outStream.writeByte('}');
   }
 };
+
+pub const Layout = enum {
+  uninitialized,
+  general,
+  transferSrc,
+  transferDst,
+};
