@@ -24,43 +24,13 @@ fn AddShader(
 
 pub fn build(builder: * std.build.Builder) !void {
 
-  const supportsOpenCL =  (
-    builder.option(
-      bool,
-      "supportsOpenCL", "if the renderer should support OpenCL"
-    )
-      orelse false
-  );
-
-  const supportsVulkan =  (
-    builder.option(
-      bool,
-      "supportsVulkan", "if the renderer should support Vulkan"
-    )
-      orelse false
-  );
-
-  if (!supportsOpenCL and !supportsVulkan) {
-    std.log.err("must support either OpenCL or Vulkan", .{});
-    return;
-  }
-
-  const options = builder.addOptions();
-  options.addOption(bool, "supportsOpenCL", supportsOpenCL);
-  options.addOption(bool, "supportsVulkan", supportsVulkan);
-
   // add test step
   var testStep = builder.step("test", "Run all the tests");
   var tester = builder.addTest("tests/package.zig");
   tester.linkSystemLibrary("c");
-  if (supportsOpenCL)
-    tester.linkSystemLibrary("OpenCL");
-  if (supportsVulkan) {
-    tester.linkSystemLibrary("glfw");
-    tester.linkSystemLibrary("vulkan");
-  }
+  tester.linkSystemLibrary("glfw");
+  tester.linkSystemLibrary("vulkan");
   tester.setMainPkgPath(".");
-  tester.addOptions("BuildOptions", options);
   testStep.dependOn(&tester.step);
 
   const mode = builder.standardReleaseOptions();
@@ -69,14 +39,8 @@ pub fn build(builder: * std.build.Builder) !void {
 
   exe.linkSystemLibrary("c");
 
-  if (supportsOpenCL)
-    exe.linkSystemLibrary("OpenCL");
-  if (supportsVulkan) {
-    exe.linkSystemLibrary("glfw");
-    exe.linkSystemLibrary("vulkan");
-  }
-
-  exe.addOptions("BuildOptions", options);
+  exe.linkSystemLibrary("glfw");
+  exe.linkSystemLibrary("vulkan");
 
   builder.default_step.dependOn(&exe.step);
   exe.install();

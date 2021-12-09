@@ -1,6 +1,5 @@
 const mtr = @import("../src/mtr/package.zig");
 const std = @import("std");
-const util = @import("util.zig");
 
 fn compareValues(failStr : anytype, actual : u8, expected : u8,) void {
   _ = std.testing.expect(actual == expected) catch {};
@@ -27,8 +26,7 @@ test "buffer mapping + transfer" {
   var mtrCtx = (
     mtr.Context.init(
       &debugAllocator.allocator,
-      util.getBackend(),
-      mtr.backend.RenderingOptimizationLevel.Debug,
+      mtr.RenderingOptimizationLevel.debug,
     )
   );
   defer mtrCtx.deinit();
@@ -151,8 +149,7 @@ test "image upload - channels" {
   var mtrCtx = (
     mtr.Context.init(
       &debugAllocator.allocator,
-      util.getBackend(),
-      mtr.backend.RenderingOptimizationLevel.Debug,
+      mtr.RenderingOptimizationLevel.debug,
     )
   );
   defer mtrCtx.deinit();
@@ -342,59 +339,29 @@ test "image upload - channels" {
   }
 }
 
-test "pipeline - UVCoord To Screen" {
-  // // rasterizes a simple triangle
-  // // tests the 'rasterize' command
+// const vertexBinding : u32 = 0;
+// const descriptorSetLayoutPerDraw = (
+//   mtrCtx.createDescriptorSetLayout(
+//     .perDraw,
+//     .{
+//       .{
+//         .descriptorType = .storageBuffer,
+//         .binding = vertexBinding,
+//       },
+//     },
+//   )
+// );
 
-  // const moduleFileData align(@alignOf(u32)) = (
-  //   @embedFile("../shaders/raytrace.comp")
-  // );
+// { // -- write per-draw descriptors
+//   const descriptorSetByDrawWriter = (
+//     mtrCtx.createDescriptorSetWriter(descriptorSetLayoutPerDraw,)
+//   );
+//   defer descriptorSetByDrawWriter.finish();
 
-  // std.testing.log_level = .debug;
-
-  // var debugAllocator =
-  //   std.heap.GeneralPurposeAllocator(
-  //     .{
-  //       .enable_memory_limit = true,
-  //       .safety = true,
-  //     }
-  //   ){};
-  // defer {
-  //   const leaked = debugAllocator.deinit();
-  //   if (leaked) std.log.info("{s}", .{"leaked memory"});
-  // }
-
-  // var mtrCtx = (
-  //   mtr.Context.init(
-  //     &debugAllocator.allocator,
-  //     util.getBackend(),
-  //     mtr.backend.RenderingOptimizationLevel.Debug,
-  //   )
-  // );
-  // defer mtrCtx.deinit();
-
-  // const queue : mtr.queue.Idx = (
-  //   try mtrCtx.constructQueue(.{
-  //     .workType = mtr.queue.WorkType{.transfer = true, .render = true},
-  //   })
-  // );
-
-  // const commandPoolScratch : mtr.command.PoolIdx = (
-  //   try mtrCtx.constructCommandPool(.{
-  //     .flags = .{ .transient = true, .resetCommandBuffer = true },
-  //     .queue = queue,
-  //   })
-  // );
-
-  // const commandBufferScratch : mtr.command.BufferIdx = (
-  //   try mtrCtx.constructCommandBuffer(.{
-  //     .commandPool = commandPoolScratch,
-  //   })
-  // );
-
-  // const shaderModule = (
-  //   mtrCtx.createShaderModule(
-  //     mtr.shader.ConstructInfo(.{.data = moduleFileData})
-  //   )
-  // );
-}
+//   try descriptorSetByDrawWriter.set(
+//     .{
+//       .binding = vertexBinding,
+//       .buffer = triangleOriginBuffer,
+//     },
+//   );
+// }

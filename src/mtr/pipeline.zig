@@ -4,33 +4,32 @@ const std = @import("std");
 // pipelines describe how to commit some compute or rasterize workload to the
 //   user
 
-pub const Idx = u64;
-pub const DescriptorSetPoolIdx = u64;
+pub const ComputeIdx = u64;
+pub const LayoutIdx = u64;
 
-pub const Layout = struct {
-  descriptors : std.AutoHashMap(u64, mtr.descriptor.Type),
-  pushConstants : std.ArrayList(mtr.descriptor.PushConstantRange),
-
-  pub fn init(a : * std.mem.Allocator) @This() {
-    return .{
-      .descriptors = std.AutoHashMap(u64, mtr.descriptor.Type).init(a),
-      .pushConstants = std.ArrayList(mtr.descriptor.PushConstantRange).init(a),
-    };
-  }
-
-  pub fn deinit(self : @This()) void {
-    self.descriptors.deinit();
-    self.pushConstants.deinit();
-  }
+pub const ComputeFlags = packed struct {
 };
 
-pub const ConstructInfo = struct {
-  layout : mtr.pipeline.Layout,
+pub const ShaderStageFlags = packed struct {
+};
 
-  depthTestEnable : bool,
-  depthWriteEnable : bool,
+pub const ShaderStageCreateInfo = struct {
+};
 
-  // TODO winding order, idk
+pub const Layout = struct {
+  descriptorSetLayouts : [] const mtr.descriptor.LayoutIdx,
+
+  contextIdx : LayoutIdx = 0,
+};
+
+pub const Compute = struct {
+  computeFlags : ComputeFlags,
+  stageFlags : ShaderStageFlags,
+  shaderModule : mtr.shader.Idx,
+  pName : [*:0] const u8,
+  layout : mtr.pipeline.LayoutIdx,
+
+  contextIdx : LayoutIdx = 0,
 };
 
 pub const RasterizePrimitive = struct {
@@ -41,13 +40,8 @@ pub const RasterizePrimitive = struct {
 
 pub const StageFlags = packed struct {
   begin : bool = true,
-  computeShader : bool = true,
+  compute : bool = true,
   transfer : bool = true,
   host : bool = true,
   end : bool = true,
 };
-
-// pub const DescriptorSetWriter = struct {
-//   pub fn init(ctx : * mtr.Context) @This() {
-//   }
-// };

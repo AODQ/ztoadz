@@ -3,7 +3,7 @@ const std = @import("std");
 
 const glfw = @import("glfw.zig");
 const vkDispatcher = @import("vulkan-dispatchers.zig");
-const vk = @import("vulkan.zig");
+const vk = @import("../../../../bindings/vulkan.zig");
 
 pub const VulkanSwapchain = struct {
 
@@ -427,10 +427,11 @@ pub const VulkanSwapchainImage = struct {
   }
 
   pub fn WaitForFence(self : @This(), vkd : VulkanDeviceContext) !void {
-    _ =
+    _ = (
       try vkd.vkdd.waitForFences(
         vkd.device, 1, @ptrCast([*] const vk.Fence, &self.fenceFrame)
       , vk.TRUE, std.math.maxInt(u64)
-      );
+      )
+    );
   }
 };

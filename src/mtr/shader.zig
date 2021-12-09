@@ -4,10 +4,11 @@ const std = @import("std");
 pub const Idx = u64;
 
 pub const ConstructInfo = struct {
-  data : [] u64,
+  data : [] const u8,
 };
 
 pub const Module = struct {
-  contextIdx : i32,
-  data : [] u64,
+  data  : [] const u8,
+
+  contextIdx : u64,
 };

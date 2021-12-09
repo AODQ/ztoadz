@@ -3,21 +3,21 @@ const std = @import("std");
 
 const glfw = @import("glfw.zig");
 const vkDispatcher = @import("vulkan-dispatchers.zig");
-const vk = @import("vulkan.zig");
+const vk = @import("../../../../bindings/vulkan.zig");
 
 fn zeroInitInPlace(ptr : anytype) void {
   ptr.* = std.mem.zeroInit(std.meta.Child(@TypeOf(ptr)), .{});
 }
 
 pub fn toImageType(image : mtr.image.Primitive) vk.ImageType {
-  if (image.depth > 0)
+  if (image.depth > 1)
     return vk.ImageType.@"3D";
-  if (image.height > 0)
+  if (image.height > 1)
     return vk.ImageType.@"2D";
   return vk.ImageType.@"1D";
 }
 
-pub fn toFormat(image : mtr.image.Primitive) vk.Format {
+pub fn imageToVkFormat(image : mtr.image.Primitive) vk.Format {
   return switch (image.byteFormat) {
     .uint8 => switch (image.channels) {
       .R => vk.Format.r8Uint,
@@ -37,6 +37,24 @@ pub fn toSharingMode(image : mtr.image.Primitive) vk.SharingMode {
   return switch (image.queueSharing) {
     .exclusive => vk.SharingMode.exclusive,
     .concurrent => vk.SharingMode.concurrent,
+  };
+}
+
+fn descriptorTypeToVk(descriptorType : mtr.descriptor.Type) vk.DescriptorType {
+  return switch (descriptorType) {
+    .uniformBuffer => .uniformBuffer,
+    .storageBuffer => .storageBuffer,
+    .sampler => .sampler,
+    .sampledImage => .sampledImage,
+    .storageImage => .storageImage,
+  };
+}
+
+fn viewTypeToVk(viewType : mtr.image.ViewType) vk.ImageViewType {
+  return switch (viewType) {
+    .d1      => .@"1D",      .d2        => .@"2D", .d3 => .@"3D",
+    .d1Array => .@"1DArray", .d2Array   => .@"2DArray",
+    .cube    => .cube,       .cubeArray => .cubeArray,
   };
 }
 
@@ -67,7 +85,7 @@ fn stageFlagToVk(flags : mtr.pipeline.StageFlags) vk.PipelineStageFlags {
   return vk.PipelineStageFlags {
     .topOfPipeBit = flags.begin,
     .bottomOfPipeBit = flags.end,
-    .computeShaderBit = flags.computeShader,
+    .computeShaderBit = flags.compute,
     .transferBit = flags.transfer,
     .hostBit = flags.host,
   };
@@ -617,7 +635,19 @@ pub const Rasterizer = struct {
   heapRegions : std.AutoHashMap(mtr.heap.RegionIdx, vk.DeviceMemory),
   buffers : std.AutoHashMap(mtr.buffer.Idx, vk.Buffer),
   images : std.AutoHashMap(mtr.image.Idx, Image),
+  imageViews : std.AutoHashMap(mtr.image.Idx, vk.ImageView),
   shaderModules : std.AutoHashMap(mtr.shader.Idx, vk.ShaderModule),
+  descriptorSetLayouts : (
+    std.AutoHashMap(mtr.descriptor.LayoutIdx, vk.DescriptorSetLayout)
+  ),
+  descriptorSetPools : (
+    std.AutoHashMap(mtr.descriptor.PoolIdx, vk.DescriptorPool)
+  ),
+  descriptorSets : (
+    std.AutoHashMap(mtr.descriptor.SetIdx, vk.DescriptorSet)
+  ),
+  computePipelines : std.AutoHashMap(mtr.pipeline.ComputeIdx, vk.Pipeline),
+  pipelineLayouts : std.AutoHashMap(mtr.pipeline.LayoutIdx, vk.PipelineLayout),
   queues : std.AutoHashMap(mtr.queue.Idx, VulkanDeviceQueue),
   commandPools : std.AutoHashMap(mtr.command.PoolIdx, vk.CommandPool),
   commandBuffers : std.AutoHashMap(mtr.command.PoolIdx, CommandBuffer),
@@ -695,11 +725,37 @@ pub const Rasterizer = struct {
         std.AutoHashMap(mtr.heap.RegionIdx, vk.Buffer).init(allocator)
       ),
       .images = std.AutoHashMap(mtr.image.Idx, Image).init(allocator),
+      .imageViews = (
+        std.AutoHashMap(mtr.image.ViewIdx, vk.ImageView).init(allocator)
+      ),
       .shaderModules = (
         std.AutoHashMap(mtr.shader.Idx, vk.ShaderModule).init(allocator)
       ),
       .queues = (
         std.AutoHashMap(mtr.queue.Idx, VulkanDeviceQueue).init(allocator)
+      ),
+      .descriptorSetLayouts = (
+        std
+          .AutoHashMap(mtr.descriptor.LayoutIdx, vk.DescriptorSetLayout)
+          .init(allocator)
+      ),
+      .descriptorSetPools = (
+        std
+          .AutoHashMap(mtr.descriptor.PoolIdx, vk.DescriptorPool)
+          .init(allocator)
+      ),
+      .descriptorSets = (
+        std
+          .AutoHashMap(mtr.descriptor.SetIdx, vk.DescriptorSet)
+          .init(allocator)
+      ),
+      .computePipelines = (
+        std.AutoHashMap(mtr.pipeline.ComputeIdx, vk.Pipeline).init(allocator)
+      ),
+      .pipelineLayouts = (
+        std
+          .AutoHashMap(mtr.pipeline.LayoutIdx, vk.PipelineLayout)
+          .init(allocator)
       ),
       .commandPools = (
         std.AutoHashMap(mtr.command.PoolIdx, vk.CommandPool).init(allocator)
@@ -737,11 +793,67 @@ pub const Rasterizer = struct {
       );
     }
 
+    var descriptorSetLayoutIter = self.descriptorSetLayouts.iterator();
+    while (descriptorSetLayoutIter.next()) |descriptorSetLayout| {
+      self.vkd.vkdd.destroyDescriptorSetLayout(
+        self.vkd.device,
+        descriptorSetLayout.value_ptr.*,
+        null
+      );
+    }
+
+    var descriptorSetPoolIter = self.descriptorSetPools.iterator();
+    while (descriptorSetPoolIter.next()) |descriptorSetPool| {
+      self.vkd.vkdd.destroyDescriptorPool(
+        self.vkd.device,
+        descriptorSetPool.value_ptr.*,
+        null
+      );
+    }
+
+    // TODO to dealloc this need to know the allocated pool
+    // maybe from mtr context
+    // var descriptorSetIter = self.descriptorSets.iterator();
+    // while (descriptorSetIter.next()) |descriptorSet| {
+    //   self.vkd.vkdd.freeDescriptorSets(
+    //     self.vkd.device,
+    //     descriptorSetPool.value_ptr.*,
+    //     null
+    //   );
+    // }
+
+    var imageViewIter = self.imageViews.iterator();
+    while (imageViewIter.next()) |imageView| {
+      self.vkd.vkdd.destroyImageView(
+        self.vkd.device,
+        imageView.value_ptr.*,
+        null
+      );
+    }
+
     var imageIter = self.images.iterator();
     while (imageIter.next()) |image| {
       self.vkd.vkdd.destroyImage(
         self.vkd.device,
         image.value_ptr.*.handle,
+        null
+      );
+    }
+
+    var computePipelineIter = self.computePipelines.iterator();
+    while (computePipelineIter.next()) |computePipeline| {
+      self.vkd.vkdd.destroyPipeline(
+        self.vkd.device,
+        computePipeline.value_ptr.*,
+        null
+      );
+    }
+
+    var pipelineLayoutIter = self.pipelineLayouts.iterator();
+    while (pipelineLayoutIter.next()) |pipelineLayout| {
+      self.vkd.vkdd.destroyPipelineLayout(
+        self.vkd.device,
+        pipelineLayout.value_ptr.*,
         null
       );
     }
@@ -797,28 +909,40 @@ pub const Rasterizer = struct {
 
     // destroy local memory
     self.heaps.deinit();
+    self.shaderModules.deinit();
+    self.descriptorSetLayouts.deinit();
+    self.descriptorSetPools.deinit();
+    self.descriptorSets.deinit();
     self.heapRegions.deinit();
     self.buffers.deinit();
     self.images.deinit();
+    self.imageViews.deinit();
     self.queues.deinit();
     self.commandPools.deinit();
+    self.pipelineLayouts.deinit();
+    self.computePipelines.deinit();
     self.commandBuffers.deinit();
   }
 
   pub fn createShaderModule(
     self : * @This(),
     _ : mtr.Context,
-    primitive : mtr.shader.Module,
-    data : [] u64,
-  ) void {
-    const module = (
+    shaderModule : mtr.shader.Module,
+  ) !void {
+    const vkShaderModule = (
       self.vkd.vkdd.createShaderModule(
         self.vkd.device,
         vk.ShaderModuleCreateInfo {
           .flags = .{},
-          .codeSize = data.len,
-          .pCode = data.ptr,
+          .codeSize = shaderModule.data.len,
+          .pCode = (
+            @ptrCast(
+              [*] const u32,
+              @alignCast(@alignOf(u32), shaderModule.data.ptr)
+            )
+          ),
         },
+        null,
       )
       catch |err| {
         std.log.crit("{s}{}", .{"could not create shader module: ", err});
@@ -826,7 +950,159 @@ pub const Rasterizer = struct {
       }
     );
 
-    self.shaderModules.putNoClobber(primitive.contextIdx, module);
+    try self.shaderModules.putNoClobber(shaderModule.contextIdx, vkShaderModule);
+  }
+
+  pub fn createDescriptorSet(
+    self : * @This(),
+    _ : mtr.Context,
+    descriptorSet : mtr.descriptor.Set,
+  ) !void {
+    // allocate descriptor set TODO should allocate elsewhere
+    var vkDescriptorSet : vk.DescriptorSet = undefined;
+    try self.vkd.vkdd.allocateDescriptorSets(
+      self.vkd.device,
+      .{
+        .descriptorPool = self.descriptorSetPools.get(descriptorSet.pool).?,
+        .descriptorSetCount = 1,
+        .pSetLayouts = (
+          @ptrCast(
+            [*] const vk.DescriptorSetLayout,
+            self.descriptorSetLayouts.getPtr(descriptorSet.layout).?
+          )
+        ),
+      },
+      @ptrCast([*] vk.DescriptorSet, &vkDescriptorSet),
+    );
+
+    try self.descriptorSets.putNoClobber(
+      descriptorSet.contextIdx, vkDescriptorSet
+    );
+  }
+
+  pub fn createDescriptorSetLayout(
+    self : * @This(),
+    context : mtr.Context,
+    setLayout : mtr.descriptor.SetLayout,
+  ) !void {
+
+    var layoutBindings = (
+      std
+        .ArrayList(vk.DescriptorSetLayoutBinding)
+        .init(context.primitiveAllocator)
+    );
+    defer layoutBindings.deinit();
+
+    var setLayoutIterator = setLayout.bindingIdxToLayoutBinding.iterator();
+    while (setLayoutIterator.next()) |setLayoutBinding| {
+      const binding = setLayoutBinding.value_ptr;
+      (try layoutBindings.addOne()).* = .{
+        .binding = binding.binding,
+        .descriptorType = descriptorTypeToVk(binding.descriptorType),
+        .descriptorCount = binding.count,
+        .stageFlags = .{ .computeBit = true },
+        .pImmutableSamplers = null,
+      };
+    }
+
+    const vkDescriptorSetLayout = (
+      try self.vkd.vkdd.createDescriptorSetLayout(
+        self.vkd.device,
+        .{
+          .flags = .{
+            .updateAfterBindPoolBit = (setLayout.frequency == .perDraw),
+          },
+          .bindingCount = @intCast(u32, layoutBindings.items.len),
+          .pBindings = layoutBindings.items.ptr,
+        },
+        null,
+      )
+    );
+
+    try self.descriptorSetLayouts.putNoClobber(
+      setLayout.contextIdx,
+      vkDescriptorSetLayout
+    );
+  }
+
+  pub fn createDescriptorSetPool(
+    self : * @This(),
+    context : mtr.Context,
+    descriptorSetPool : mtr.descriptor.SetPool,
+  ) !void {
+    var descriptorSetSizes = (
+      std.ArrayList(vk.DescriptorPoolSize).init(context.primitiveAllocator)
+    );
+    defer descriptorSetSizes.deinit();
+
+    // fill descriptor set sizes
+    if (descriptorSetPool.descriptorSizes.sampler > 0) {
+      (try descriptorSetSizes.addOne()).* = (
+        vk.DescriptorPoolSize {
+          .@"type" = vk.DescriptorType.sampler,
+          .descriptorCount = descriptorSetPool.descriptorSizes.sampler,
+        }
+      );
+    }
+
+    if (descriptorSetPool.descriptorSizes.storageImage > 0) {
+      (try descriptorSetSizes.addOne()).* = (
+        vk.DescriptorPoolSize {
+          .@"type" = vk.DescriptorType.storageImage,
+          .descriptorCount = descriptorSetPool.descriptorSizes.storageImage,
+        }
+      );
+    }
+
+    if (descriptorSetPool.descriptorSizes.storageBuffer > 0) {
+      (try descriptorSetSizes.addOne()).* = (
+        vk.DescriptorPoolSize {
+          .@"type" = vk.DescriptorType.storageBuffer,
+          .descriptorCount = descriptorSetPool.descriptorSizes.storageBuffer,
+        }
+      );
+    }
+
+    if (descriptorSetPool.descriptorSizes.sampledImage > 0) {
+      (try descriptorSetSizes.addOne()).* = (
+        vk.DescriptorPoolSize {
+          .@"type" = vk.DescriptorType.sampledImage,
+          .descriptorCount = descriptorSetPool.descriptorSizes.sampledImage,
+        }
+      );
+    }
+
+    if (descriptorSetPool.descriptorSizes.uniformBuffer > 0) {
+      (try descriptorSetSizes.addOne()).* = (
+        vk.DescriptorPoolSize {
+          .@"type" = vk.DescriptorType.uniformBuffer,
+          .descriptorCount = descriptorSetPool.descriptorSizes.uniformBuffer,
+        }
+      );
+    }
+
+    // create descriptor set pool
+
+    var vkDescriptorSetPool = (
+      try self.vkd.vkdd.createDescriptorPool(
+        self.vkd.device,
+        vk.DescriptorPoolCreateInfo {
+          .flags = .{
+            .updateAfterBindBit = descriptorSetPool.frequency == .perDraw,
+            .freeDescriptorSetBit = descriptorSetPool.frequency == .perDraw,
+          },
+          .maxSets = descriptorSetPool.maxSets,
+          .poolSizeCount = @intCast(u32, descriptorSetSizes.items.len),
+          .pPoolSizes = descriptorSetSizes.items.ptr,
+        },
+        null,
+      )
+    );
+
+    try self.descriptorSetPools.putNoClobber(
+      descriptorSetPool.contextIdx,
+      vkDescriptorSetPool
+    );
   }
 
   pub fn createQueue(
@@ -1101,7 +1377,7 @@ pub const Rasterizer = struct {
             .subsampledBitEXT = image.samplesPerTexel != .s1,
           },
           .imageType = toImageType(image),
-          .format = toFormat(image),
+          .format = imageToVkFormat(image),
           .extent = vk.Extent3D {
             .width = @intCast(u32, image.width),
             .height = @intCast(u32, image.height),
@@ -1129,6 +1405,40 @@ pub const Rasterizer = struct {
     self.images.putNoClobber(
       image.contextIdx,
       Image { .handle = vkImage, },
+    ) catch unreachable;
+  }
+
+  pub fn createImageView(
+    self : * @This(),
+    context : mtr.Context,
+    imageView : mtr.image.View,
+  ) !void {
+    const mtImage = context.images.get(imageView.image).?;
+
+    const vkImageView = (
+      try self.vkd.vkdd.createImageView(
+        self.vkd.device,
+        .{
+          .flags = .{ },
+          .image = self.images.get(imageView.image).?.handle,
+          .viewType = viewTypeToVk(imageView.viewType),
+          .format = imageToVkFormat(mtImage),
+          .components = .{ .r = .r, .g = .g, .b = .b, .a = .a, },
+          .subresourceRange = .{
+            .aspectMask = .{ .colorBit = true },
+            .baseMipLevel = imageView.mipmapLayerBegin,
+            .levelCount = imageView.mipmapLayerCount,
+            .baseArrayLayer = imageView.arrayLayerBegin,
+            .layerCount = imageView.arrayLayerCount,
+          },
+        },
+        null
+      )
+    );
+
+    self.imageViews.putNoClobber(
+      imageView.contextIdx,
+      vkImageView,
     ) catch unreachable;
   }
 
@@ -1401,6 +1711,33 @@ pub const Rasterizer = struct {
           @ptrCast([*] const vk.ImageSubresourceRange, &subresourceRange),
         );
       },
+      .bindPipeline => |action| {
+        self.vkd.vkdd.cmdBindPipeline(
+          vkCommandBuffer,
+          vk.PipelineBindPoint.compute,
+          self.computePipelines.get(action.pipeline).?,
+        );
+      },
+      .bindDescriptorSets => |action| {
+        self.vkd.vkdd.cmdBindDescriptorSets(
+          vkCommandBuffer,
+          vk.PipelineBindPoint.compute,
+          self.pipelineLayouts.get(action.pipelineLayout).?,
+          0,
+          1,
+          @ptrCast(
+            [*] const vk.DescriptorSet,
+            &self.descriptorSets.get(action.descriptorSets[0])
+          ),
+          0, undefined,
+        );
+      },
+      .dispatch => |action| {
+        self.vkd.vkdd.cmdDispatch(
+          vkCommandBuffer,
+          action.width, action.height, action.depth,
+        );
+      },
     }
   }
 
@@ -1436,6 +1773,12 @@ pub const Rasterizer = struct {
     ) catch unreachable;
   }
 
+  pub fn deviceWaitIdle(
+    self : * @This()
+  ) void {
+    self.vkd.vkdd.deviceWaitIdle(self.vkd.device) catch unreachable;
+  }
+
   pub fn queueFlush(
     self : * @This(),
     _ : mtr.Context,
@@ -1451,7 +1794,7 @@ pub const Rasterizer = struct {
   }
 
   pub fn mapMemory(
-    self : * @This(),
+    self : @This(),
     context : mtr.Context,
     memory : mtr.util.MappedMemoryRange,
   ) ! mtr.util.MappedMemory {
@@ -1479,6 +1822,169 @@ pub const Rasterizer = struct {
   ) void {
     var vkHeapRegion = self.heapRegions.getPtr(memory.mapping).?;
     self.vkd.vkdd.unmapMemory(self.vkd.device, vkHeapRegion.*);
+  }
+
+  pub fn writeDescriptorSet(
+    self : * @This(),
+    context : mtr.Context,
+    writer : mtr.descriptor.SetWriter,
+  ) !void {
+    const vkDescriptorSet = self.descriptorSets.get(writer.destinationSet).?;
+
+    var descriptorWrites = (
+      std.ArrayList(vk.WriteDescriptorSet).init(self.allocator)
+    );
+    defer descriptorWrites.deinit();
+    try descriptorWrites.resize(writer.writes.items.len);
+
+    for (writer.writes.items) |descriptorWrite, idx| {
+      var descriptorImageInfo : ? vk.DescriptorImageInfo = null;
+      var descriptorBufferInfo : ? vk.DescriptorBufferInfo = null;
+
+      // TODO allow multiple items
+
+      if (descriptorWrite.imageView != null) {
+        // var mtDescriptorImageView = (
+        //   context.imageViews.getPtr(binding.imageView.?).?
+        // );
+        var vkDescriptorImageView = (
+          self.imageViews.get(descriptorWrite.imageView.?).?
+        );
+        descriptorImageInfo = .{
+          .imageView = vkDescriptorImageView,
+          .imageLayout = .general,
+          .sampler = .null_handle, // TODO
+        };
+      }
+
+      if (descriptorWrite.buffer != null) {
+        var mtDescriptorBuffer = (
+          context.buffers.getPtr(descriptorWrite.buffer.?).?
+        );
+        var vkDescriptorBuffer = (
+          self.buffers.get(descriptorWrite.buffer.?).?
+        );
+        descriptorBufferInfo = .{
+          .buffer = vkDescriptorBuffer,
+          .offset = descriptorWrite.bufferOffset,
+          .range = (
+            if (descriptorWrite.bufferLength == 0) (
+              mtDescriptorBuffer.length
+            ) else (
+              descriptorWrite.bufferLength
+            )
+          ),
+        };
+      }
+
+      const binding = (
+        writer.layout.bindingIdxToLayoutBinding.get(descriptorWrite.binding).?
+      );
+
+      descriptorWrites.items[idx] = vk.WriteDescriptorSet {
+        .dstSet = vkDescriptorSet,
+        .dstBinding = binding.binding,
+        .dstArrayElement = 0,
+        .descriptorCount = binding.count,
+        .descriptorType = descriptorTypeToVk(binding.descriptorType),
+        .pImageInfo = (
+          if (descriptorImageInfo == null) (
+            undefined
+          ) else (
+            @ptrCast([*] const vk.DescriptorImageInfo, &descriptorImageInfo.?)
+          )
+        ),
+        .pBufferInfo = (
+          if (descriptorBufferInfo == null) (
+            undefined
+          ) else (
+            @ptrCast([*] const vk.DescriptorBufferInfo, &descriptorBufferInfo.?)
+          )
+        ),
+        .pTexelBufferView = undefined,
+      };
+    }
+
+    self.vkd.vkdd.updateDescriptorSets(
+      self.vkd.device,
+      @intCast(u32, descriptorWrites.items.len),
+      descriptorWrites.items.ptr,
+      0,
+      undefined,
+    );
+  }
+
+  pub fn createPipelineLayout(
+    self : * @This(),
+    context : mtr.Context,
+    pipelineLayout : mtr.pipeline.Layout,
+  ) !void {
+    var descriptorSetLayouts = (
+      std.ArrayList(vk.DescriptorSetLayout).init(context.primitiveAllocator)
+    );
+    defer descriptorSetLayouts.deinit();
+    try descriptorSetLayouts.resize(pipelineLayout.descriptorSetLayouts.len);
+
+    for (pipelineLayout.descriptorSetLayouts) |descriptorSetLayout, idx| {
+      descriptorSetLayouts.items[idx] = (
+        self.descriptorSetLayouts.get(descriptorSetLayout).?
+      );
+    }
+
+    const vkPipelineLayout = try (
+      self.vkd.vkdd.createPipelineLayout(
+        self.vkd.device,
+        .{
+          .flags = .{},
+          .setLayoutCount = @intCast(u32, descriptorSetLayouts.items.len),
+          .pSetLayouts = descriptorSetLayouts.items.ptr,
+          .pushConstantRangeCount = 0,
+          .pPushConstantRanges = undefined,
+        },
+        null
+      )
+    );
+
+    try self.pipelineLayouts.putNoClobber(
+      pipelineLayout.contextIdx,
+      vkPipelineLayout
+    );
+  }
+
+  pub fn createComputePipeline(
+    self : * @This(),
+    _ : mtr.Context,
+    computePipeline : mtr.pipeline.Compute,
+  ) !void {
+    var vkComputePipeline : vk.Pipeline = .null_handle;
+
+    const pipelineCreateInfo = vk.ComputePipelineCreateInfo {
+      .flags = .{},
+      .stage = .{
+        .flags = .{},
+        .stage = .{ .computeBit = true },
+        .module = self.shaderModules.get(computePipeline.shaderModule).?,
+        .pName = computePipeline.pName,
+        .pSpecializationInfo = null,
+      },
+      .layout = self.pipelineLayouts.get(computePipeline.layout).?,
+      .basePipelineHandle = .null_handle,
+      .basePipelineIndex = 0,
+    };
+
+    _ = try self.vkd.vkdd.createComputePipelines(
+      self.vkd.device,
+      .null_handle,
+      1,
+      @ptrCast([*] const vk.ComputePipelineCreateInfo, &pipelineCreateInfo),
+      null,
+      @ptrCast([*] vk.Pipeline, &vkComputePipeline),
+    );
+
+    try self.computePipelines.putNoClobber(
+      computePipeline.contextIdx,
+      vkComputePipeline
+    );
   }
 
   // -- utils ------------------------------------------------------------------

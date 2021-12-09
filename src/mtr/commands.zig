@@ -9,6 +9,9 @@ pub const ActionType = enum {
   transferImageToBuffer,
   transferMemory,
   uploadTexelToImageMemory,
+  bindPipeline,
+  dispatch,
+  bindDescriptorSets,
 
   pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
 };
@@ -100,6 +103,19 @@ pub const UploadTexelToImageMemory = struct {
   mipmapLevelBegin : i64 = 0, mipmapLevelEnd : i64 = imageRangeEnd,
 };
 
+pub const BindPipeline = struct {
+  pipeline : mtr.pipeline.ComputeIdx,
+};
+
+pub const Dispatch = struct {
+  width : u32, height : u32, depth : u32,
+};
+
+pub const BindDescriptorSets = struct {
+  pipelineLayout : mtr.pipeline.LayoutIdx,
+  descriptorSets : [] mtr.descriptor.LayoutIdx,
+};
+
 // some amount of action independent of another, such that one complete amount
 //   of work can be made between the GPU and CPU. Such as blits, allocations,
 //   initiating a render dispatch, etc
@@ -110,6 +126,9 @@ pub const Action = union(ActionType) {
   transferImageToBuffer : mtr.command.TransferImageToBuffer,
   pipelineBarrier : mtr.command.PipelineBarrier,
   uploadTexelToImageMemory : mtr.command.UploadTexelToImageMemory,
+  bindPipeline : mtr.command.BindPipeline,
+  dispatch : mtr.command.Dispatch,
+  bindDescriptorSets : mtr.command.BindDescriptorSets,
 
   // pub fn jsonStringify(
   //   self : @This(),

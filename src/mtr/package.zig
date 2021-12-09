@@ -70,8 +70,6 @@
 // to import use
 // const mtr = @import("package.zig");
 
-pub const backend    = @import("backend/package.zig");
-
 pub const buffer     = @import("buffer.zig");
 pub const command    = @import("commands.zig");
 pub const context    = @import("context.zig");
@@ -96,3 +94,8 @@ pub const AccessFlags = packed struct {
   hostRead : bool = false,
   hostWrite : bool = false,
 };
+
+pub const RenderingOptimizationLevel = enum {
+  release, debug,
+};
+

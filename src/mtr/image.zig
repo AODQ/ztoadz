@@ -2,6 +2,7 @@ const mtr = @import("package.zig");
 const std = @import("std");
 
 pub const Idx = u64;
+pub const ViewIdx = u64;
 
 pub const ConstructInfo = struct {
   offset : u64, // TODO change for buffer/image 'offset' -> 'offsetIntoHeap'
@@ -106,4 +107,28 @@ pub const Layout = enum {
   general,
   transferSrc,
   transferDst,
+};
+
+pub const ViewType = enum {
+  d1, d2, d3, d1Array, d2Array, cube, cubeArray,
+};
+
+pub const ViewCreateInfo = struct {
+  image : mtr.image.Idx,
+  viewType : ViewType = .d2,
+  mipmapLayerBegin : u32 = 0,
+  mipmapLayerCount : u32 = 1,
+  arrayLayerBegin : u32 = 0,
+  arrayLayerCount : u32 = 1,
+};
+
+pub const View = struct {
+  image : mtr.image.Idx,
+  viewType : ViewType,
+  mipmapLayerBegin : u32,
+  mipmapLayerCount : u32,
+  arrayLayerBegin : u32,
+  arrayLayerCount : u32,
+
+  contextIdx : ViewIdx,
 };

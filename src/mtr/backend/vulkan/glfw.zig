@@ -6,7 +6,7 @@ pub const c = @cImport({
 // manually import glfw vulkan symbols, as GLFW_INCLUDE_VULKAN does not seem to
 // work
 
-const vk = @import("vulkan.zig");
+const vk = @import("../../../../bindings/vulkan.zig");
 
 pub extern "c" fn glfwGetInstanceProcAddress(
   instance: vk.Instance, procname: [*:0]const u8

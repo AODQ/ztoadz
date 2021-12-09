@@ -1,6 +1,7 @@
 const mtr = @import("package.zig");
 const std = @import("std");
-const backend = @import("backend/package.zig");
+
+const backend = @import("backend/vulkan/package.zig");
 
 // All primitives exist inside a 'Context', which is the primary means to
 // communicate with monte-toad. While remaining flexible enough to be used in
@@ -11,10 +12,30 @@ pub const Context = struct {
   heapRegions : std.AutoHashMap(mtr.heap.RegionIdx, mtr.heap.Region),
   queues : std.AutoHashMap(mtr.queue.Idx, mtr.queue.Primitive),
   buffers : std.AutoHashMap(mtr.buffer.Idx, mtr.buffer.Primitive),
-  rasterizePipelines : (
-    std.AutoHashMap(mtr.pipeline.Idx, mtr.pipeline.RasterizePrimitive)
-  ),
   images : std.AutoHashMap(mtr.image.Idx, mtr.image.Primitive),
+  imageViews : std.AutoHashMap(mtr.image.ViewIdx, mtr.image.View),
+  shaderModules : std.AutoHashMap(mtr.shader.Idx, mtr.shader.Module),
+  descriptorSetPools : (
+    std.AutoHashMap(
+      mtr.descriptor.PoolIdx,
+      mtr.descriptor.SetPool
+    )
+  ),
+  descriptorSets : (
+    std.AutoHashMap(
+      mtr.descriptor.SetIdx,
+      mtr.descriptor.Set
+    )
+  ),
+  descriptorSetLayouts : (
+    std.AutoHashMap(mtr.descriptor.LayoutIdx, mtr.descriptor.SetLayout,)
+  ),
+  computePipelines : (
+    std.AutoHashMap(mtr.pipeline.ComputeIdx, mtr.pipeline.Compute)
+  ),
+  pipelineLayouts : (
+    std.AutoHashMap(mtr.pipeline.LayoutIdx, mtr.pipeline.Layout)
+  ),
   commandPools : std.AutoHashMap(mtr.command.PoolIdx, mtr.command.Pool),
   commandBufferIdToPoolId : (
     std.AutoHashMap(mtr.command.BufferIdx, mtr.command.PoolIdx)
@@ -22,21 +43,8 @@ pub const Context = struct {
 
   primitiveAllocator : * std.mem.Allocator,
 
-  renderingContext : * backend.RenderingContext,
-  optimization : backend.RenderingOptimizationLevel,
-
-  // anything util* doesn't need to be recorded, it effectively exists just to
-  //   provide underlying implementation details
-  // TODO this should be indices
-  // utilQueue : mtr.queue.Primitive,
-  // utilHeapRead : mtr.heap.Primitive,
-  // utilHeapRegionRead : mtr.heap.Region,
-  // utilHeapWrite : mtr.heap.Primitive,
-  // utilHeapRegionWrite : mtr.heap.Region,
-  // utilCommandPool : mtr.command.Pool,
-  // utilCommandBuffer : mtr.command.BufferIdx,
-  // utilBufferRead : mtr.buffer.Primitive,
-  // utilBufferWrite : mtr.buffer.Primitive,
+  rasterizer : * backend.context.Rasterizer,
+  optimization : mtr.RenderingOptimizationLevel,
 
   allocIdx : u64, // temporary FIXME
 
@@ -49,23 +57,21 @@ pub const Context = struct {
 
   pub fn init(
     primitiveAllocator : * std.mem.Allocator,
-    renderingContext : backend.RenderingContextType,
-    optimization : backend.RenderingOptimizationLevel,
+    optimization : mtr.RenderingOptimizationLevel,
   ) @This() {
-    var allocatedRenderingContext = (
-      primitiveAllocator.create(backend.RenderingContext)
+    var allocatedRasterizer = (
+      primitiveAllocator.create(backend.context.Rasterizer)
     ) catch {
       std.debug.panic("could not allocate rendering context", .{});
     };
 
-    allocatedRenderingContext.* = (
-      backend.RenderingContext.init(primitiveAllocator, renderingContext)
+    allocatedRasterizer .* = (
+      backend.context.Rasterizer.init(primitiveAllocator)
       catch |err| {
         std.log.crit(
-          "{s}{} ({s})",
+          "{s} ({s})",
           .{
             "could not create the rendering backend: ",
-            renderingContext,
             err,
           }
         );
@@ -73,88 +79,32 @@ pub const Context = struct {
       }
     );
 
-    // -- create util info
-
-    // var utilQueue = mtr.queue.Primitive {
-    //   .workType = .{.transfer = true},
-    //   .contextIdx = utilContextIdx,
-    // };
-
-    // var utilCommandPool = mtr.command.Pool {
-    //   .flags = .{ .transient = true, .resetCommandBuffer = true },
-    //   .queue = utilContextIdx,
-    //   .commandBuffers = (
-    //     std.AutoHashMap(mtr.buffer.Idx, mtr.command.Buffer)
-    //       .init(primitiveAllocator)
-    //   ),
-    //   .contextIdx = utilContextIdx,
-    // };
-
-    // var utilHeapRead = mtr.heap.Primitive {
-    //   .visibility = mtr.heap.Visibility.hostVisible,
-    //   .contextIdx = utilContextIdx,
-    // };
-
-    // var utilHeapRegionRead = mtr.heap.Region {
-    //   .allocatedHeap = utilContextIdx,
-    //   .offset = 0, .length = 1024, // 10 mb
-    //   .visibility = mtr.heap.Visibility.hostVisible,
-    //   .contextIdx = utilContextIdx,
-    // };
-
-    // var utilBufferRead = mtr.buffer.Primitive {
-    //   .allocatedHeapRegion = 0,
-    //   .offset = 0, .length = 1024*1024*50, // 10 mb transfers
-    //   .usage = .{ .transferDst = true, },
-    //   .queueSharing = mtr.queue.SharingUsage.exclusive,
-    //   .contextIdx = utilContextIdx,
-    // };
-
-    // var utilHeapWrite = mtr.heap.Primitive {
-    //   .visibility = mtr.heap.Visibility.hostWritable,
-    //   .contextIdx = utilContextIdx+1,
-    // };
-
-    // var utilHeapRegionWrite = mtr.heap.Region {
-    //   .allocatedHeap = utilContextIdx+1,
-    //   .offset = 0, .length = 1024*1024*50, // 10 mb
-    //   .visibility = mtr.heap.Visibility.hostWritable,
-    //   .contextIdx = utilContextIdx+1,
-    // };
-
-    // var utilBufferWrite = mtr.buffer.Primitive {
-    //   .allocatedHeapRegion = 0,
-    //   .offset = 0, .length = 1024*1024*50, // 10 mb transfers
-    //   .usage = .{ .transferSrc = true, },
-    //   .queueSharing = mtr.queue.SharingUsage.exclusive,
-    //   .contextIdx = utilContextIdx+1,
-    // };
-
-    // // TODO the buffers need to bind to subheap
-
     var self : @This() = undefined;
     self = .{
-      // .utilQueue = undefined,
-      // .utilHeapRead = undefined,
-      // .utilHeapRegionRead = undefined,
-      // .utilBufferRead = undefined,
-      // .utilHeapWrite = undefined,
-      // .utilHeapRegionWrite = undefined,
-      // .utilBufferWrite = undefined,
-      // .utilCommandPool = undefined,
-      // .utilCommandBuffer = undefined,
       .heaps = @TypeOf(self.heaps).init(primitiveAllocator),
       .queues = @TypeOf(self.queues).init(primitiveAllocator),
       .heapRegions = @TypeOf(self.heapRegions).init(primitiveAllocator),
       .buffers = @TypeOf(self.buffers).init(primitiveAllocator),
-      .rasterizePipelines = (
-        @TypeOf(self.rasterizePipelines).init(primitiveAllocator)
-      ),
       .images = @TypeOf(self.images).init(primitiveAllocator),
+      .imageViews = @TypeOf(self.imageViews).init(primitiveAllocator),
+      .descriptorSetPools = (
+        @TypeOf(self.descriptorSetPools).init(primitiveAllocator)
+      ),
+      .descriptorSets = (
+        @TypeOf(self.descriptorSets).init(primitiveAllocator)
+      ),
+      .descriptorSetLayouts = (
+        @TypeOf(self.descriptorSetLayouts).init(primitiveAllocator)
+      ),
+      .shaderModules = @TypeOf(self.shaderModules).init(primitiveAllocator),
+      .computePipelines = (
+        @TypeOf(self.computePipelines).init(primitiveAllocator)
+      ),
+      .pipelineLayouts = @TypeOf(self.pipelineLayouts).init(primitiveAllocator),
       .commandPools = @TypeOf(self.commandPools).init(primitiveAllocator),
       .primitiveAllocator = primitiveAllocator,
       .optimization = optimization,
-      .renderingContext = allocatedRenderingContext,
+      .rasterizer = allocatedRasterizer,
       .allocIdx = 100, // the first 100 indices are reserved for utility
       .commandBufferIdToPoolId = (
         std
@@ -163,56 +113,25 @@ pub const Context = struct {
       )
     };
 
-    // self.queues.putNoClobber(utilContextIdx, self.utilQueue)
-    //   catch unreachable;
-    // self.commandPools.putNoClobber(utilContextIdx, self.utilCommandPool)
-    //   catch unreachable;
-    // self.heaps.putNoClobber(utilContextIdx, self.utilHeapRead)
-    //   catch unreachable;
-    // self.heapRegions.putNoClobber(utilContextIdx, self.utilHeapRegionRead)
-    //   catch unreachable;
-    // self.buffers.putNoClobber(utilContextIdx, self.utilBufferRead)
-    //   catch unreachable;
-    // self.heaps.putNoClobber(utilContextIdx+1, self.utilHeapWrite)
-    //   catch unreachable;
-    // self.heapRegions.putNoClobber(utilContextIdx+1, self.utilHeapRegionWrite)
-    //   catch unreachable;
-    // self.buffers.putNoClobber(utilContextIdx+1, self.utilBufferWrite)
-    //   catch unreachable;
-
-    // self.renderingContext.createQueue(self, self.utilQueue);
-    // self.renderingContext.createCommandPool(self, self.utilCommandPool);
-    // self.utilCommandBuffer = (
-    //   self.constructCommandBufferWithId(
-    //     .{ .commandPool = utilContextIdx, },
-    //     utilContextIdx,
-    //   ) catch unreachable
-    // );
-    // self.renderingContext.createHeap(self, self.utilHeapRead);
-    // self.renderingContext.createHeapRegion(self, self.utilHeapRegionRead);
-    // self.renderingContext.createBuffer(self, self.utilBufferRead);
-    // self.renderingContext.createHeap(self, self.utilHeapWrite);
-    // self.renderingContext.createHeapRegion(self, self.utilHeapRegionWrite);
-    // self.renderingContext.createBuffer(self, self.utilBufferWrite);
-
     return self;
   }
 
   pub fn initFromSnapshot(
     jsonSnapshot : [] const u8,
     primitiveAllocator : * std.mem.Allocator,
-    renderingContext : backend.RenderingContextType,
-    optimization : backend.RenderingOptimizationLevel,
+    rasterizer : backend.context.Rasterizer,
+    optimization : mtr.RenderingOptimizationLevel,
   ) !@This() {
     // it's just a standard initialization, but we parse initial startup
     //     information from the snapshot
-    var self = @This().init(primitiveAllocator, renderingContext, optimization);
+    var self = @This().init(primitiveAllocator, rasterizer, optimization);
     errdefer self.deinit();
     try mtr.util.snapshot.loadContextFromSnapshot(&self, jsonSnapshot);
     return self;
   }
 
   pub fn deinit(self : * @This()) void {
+    self.rasterizer.deviceWaitIdle();
 
     var queueIterator = self.queues.iterator();
     while (queueIterator.next()) |queue| {
@@ -225,32 +144,33 @@ pub const Context = struct {
     }
 
     var commandPoolIter = self.commandPools.iterator();
-    while (commandPoolIter .next()) |cmdPool| {
+    while (commandPoolIter.next()) |cmdPool| {
       cmdPool.value_ptr.deinit();
     }
-    self.commandPools.deinit();
 
-    // TODO why do I need to deinit this, shouldn't the above handle it?
-    // self.utilCommandPool.commandBuffers.deinit();
-
-    self.heaps.deinit();
-    self.heapRegions.deinit();
-    self.queues.deinit();
-    self.buffers.deinit();
-    self.rasterizePipelines.deinit();
-    self.images.deinit();
-    self.commandBufferIdToPoolId.deinit();
-
-    switch (self.renderingContext.*) {
-      .clRasterizer => (
-        self.renderingContext.clRasterizer.deinit()
-      ),
-      .vkRasterizer => (
-        self.renderingContext.vkRasterizer.deinit()
-      ),
+    var descriptorSetLayoutIter = self.descriptorSetLayouts.iterator();
+    while (descriptorSetLayoutIter.next()) |descriptorSetLayout| {
+      descriptorSetLayout.value_ptr.deinit();
     }
 
-    self.primitiveAllocator.destroy(self.renderingContext);
+    self.buffers.deinit();
+    self.commandBufferIdToPoolId.deinit();
+    self.commandPools.deinit();
+    self.computePipelines.deinit();
+    self.pipelineLayouts.deinit();
+    self.descriptorSets.deinit();
+    self.descriptorSetLayouts.deinit();
+    self.descriptorSetPools.deinit();
+    self.heapRegions.deinit();
+    self.heaps.deinit();
+    self.images.deinit();
+    self.imageViews.deinit();
+    self.queues.deinit();
+    self.shaderModules.deinit();
+
+    self.rasterizer.deinit();
+
+    self.primitiveAllocator.destroy(self.rasterizer);
   }
 
   pub fn dumpToWriter(
@@ -423,7 +343,7 @@ pub const Context = struct {
  
     // possibly the backend might want to serialize some data too, but it
     // should be avoided if possible
-    // try mtr.util.json.stringifyVariable("renderingContext", ...);
+    // try mtr.util.json.stringifyVariable("rasterizer", ...);
 
     try mtr.util.json.stringifyHashMap(
       "heaps", self.heaps, options, outStream,
@@ -440,10 +360,6 @@ pub const Context = struct {
     try mtr.util.json.stringifyHashMap(
       "buffers", self.buffers, options, outStream,
     );
-    // try outStream.writeByte(',');
-    // try mtr.util.json.stringifyHashMap(
-    //   "rasterizePipelines", self.rasterizePipelines, options, outStream,
-    // );
     try outStream.writeByte(',');
     try mtr.util.json.stringifyHashMap(
       "images", self.images, options, outStream,
@@ -468,7 +384,7 @@ pub const Context = struct {
       .contextIdx = idx,
     };
 
-    self.renderingContext.createHeap(self.*, heap);
+    self.rasterizer.createHeap(self.*, heap);
 
     try self.heaps.putNoClobber(idx, heap);
 
@@ -496,7 +412,7 @@ pub const Context = struct {
       .contextIdx = idx,
     };
 
-    self.renderingContext.createHeapFromMemoryRequirements(
+    self.rasterizer.createHeapFromMemoryRequirements(
       self.*, heap, memoryRequirements,
     );
 
@@ -523,7 +439,7 @@ pub const Context = struct {
     //   length
     // TODO assert NO overlap with other heap regions in debug mode
 
-    self.renderingContext.createHeapRegion(self.*, heapRegion);
+    self.rasterizer.createHeapRegion(self.*, heapRegion);
 
     try self.heapRegions.putNoClobber(idx, heapRegion);
 
@@ -550,7 +466,7 @@ pub const Context = struct {
     std.debug.assert(self.heapRegions.getPtr(heapRegion) != null);
     buffer.allocatedHeapRegion = heapRegion;
     buffer.offset = offset;
-    self.renderingContext.bindBufferToSubheap(self.*, buffer.*);
+    self.rasterizer.bindBufferToSubheap(self.*, buffer.*);
   }
 
   pub fn bindImageToSubheap(
@@ -565,7 +481,7 @@ pub const Context = struct {
     std.debug.assert(self.heapRegions.getPtr(heapRegion) != null);
     image.allocatedHeapRegion = heapRegion;
     image.offset = offset;
-    self.renderingContext.bindImageToSubheap(self.*, image.*);
+    self.rasterizer.bindImageToSubheap(self.*, image.*);
   }
 
   pub fn constructBufferWithId(
@@ -584,7 +500,7 @@ pub const Context = struct {
 
     // TODO assert NO overlap with other buffers/images in debug mode
 
-    self.renderingContext.createBuffer(self.*, buffer);
+    self.rasterizer.createBuffer(self.*, buffer);
 
     try self.buffers.putNoClobber(idx, buffer);
 
@@ -604,7 +520,7 @@ pub const Context = struct {
     bufferIdx : mtr.buffer.Idx,
   ) mtr.util.MemoryRequirements {
     const buffer = self.buffers.get(bufferIdx).?;
-    return self.renderingContext.bufferMemoryRequirements(self.*, buffer);
+    return self.rasterizer.bufferMemoryRequirements(self.*, buffer);
   }
 
   pub fn constructImageWithId(
@@ -626,7 +542,7 @@ pub const Context = struct {
       .contextIdx = idx,
     };
 
-    self.renderingContext.createImage(self.*, image);
+    self.rasterizer.createImage(self.*, image);
 
     try self.images.putNoClobber(idx, image);
 
@@ -634,11 +550,41 @@ pub const Context = struct {
   }
 
   pub fn constructImage(
-    self : * @This(), ci : mtr.image.ConstructInfo
+    self : * @This(), ci : mtr.image.ConstructInfo,
   ) !mtr.image.Idx {
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.constructImageWithId(ci, prevIdx);
+  }
+
+  pub fn createImageViewWithId(
+    self : * @This(),
+    ci : mtr.image.ViewCreateInfo,
+    idx : mtr.image.ViewIdx,
+  ) !mtr.image.ViewIdx {
+    const imageView = mtr.image.View {
+      .image = ci.image,
+      .viewType = ci.viewType,
+      .mipmapLayerBegin = ci.mipmapLayerBegin,
+      .mipmapLayerCount = ci.mipmapLayerCount,
+      .arrayLayerBegin = ci.arrayLayerBegin,
+      .arrayLayerCount = ci.arrayLayerCount,
+      .contextIdx = idx,
+    };
+
+    try self.rasterizer.createImageView(self.*, imageView);
+
+    try self.imageViews.putNoClobber(idx, imageView);
+
+    return imageView.contextIdx;
+  }
+
+  pub fn createImageView(
+    self : * @This(), ci : mtr.image.ViewCreateInfo,
+  ) !mtr.image.ViewIdx {
+    const prevIdx = self.allocIdx;
+    self.allocIdx += 1;
+    return self.createImageViewWithId(ci, prevIdx);
   }
 
   pub fn imageMemoryRequirements(
@@ -646,7 +592,7 @@ pub const Context = struct {
     imageIdx : mtr.image.Idx,
   ) mtr.util.MemoryRequirements {
     const image = self.images.get(imageIdx).?;
-    return self.renderingContext.imageMemoryRequirements(self.*, image);
+    return self.rasterizer.imageMemoryRequirements(self.*, image);
   }
 
   pub fn getImageByteLength(self : @This(), idx : mtr.image.Idx) u64 {
@@ -670,7 +616,7 @@ pub const Context = struct {
       .contextIdx = idx,
     };
 
-    self.renderingContext.createCommandPool(self.*, pool);
+    self.rasterizer.createCommandPool(self.*, pool);
 
     try self.commandPools.putNoClobber(idx, pool);
 
@@ -699,7 +645,7 @@ pub const Context = struct {
       .idx = id,
     };
 
-    self.renderingContext.createCommandBuffer(self.*, commandBuffer);
+    self.rasterizer.createCommandBuffer(self.*, commandBuffer);
 
     var commandPool = self.commandPools.getPtr(commandBuffer.commandPool).?;
     try (
@@ -734,7 +680,7 @@ pub const Context = struct {
       .contextIdx = idx,
     };
 
-    self.renderingContext.createQueue(self.*, queue);
+    self.rasterizer.createQueue(self.*, queue);
 
     try self.queues.putNoClobber(idx, queue);
 
@@ -756,7 +702,7 @@ pub const Context = struct {
     const heap : ? * mtr.heap.Primitive = self.heaps.getPtr(heapIdx);
     std.debug.assert(heap != null);
 
-    // self.renderingContext.deallocateHeap(heap.?.underlyingMemory);
+    // self.rasterizer.deallocateHeap(heap.?.underlyingMemory);
 
     _ = self.heaps.remove(heapIdx);
   }
@@ -793,7 +739,7 @@ pub const Context = struct {
     var commandPool = commandPair.pool;
     var commandBuffer = commandPair.buffer;
 
-    self.renderingContext.beginCommandBufferWriting(self.*, commandBufferIdx);
+    self.rasterizer.beginCommandBufferWriting(self.*, commandBufferIdx);
 
     if (
           !commandPool.flags.resetCommandBuffer
@@ -813,7 +759,7 @@ pub const Context = struct {
     self : * @This(),
     commandBuffer : mtr.command.BufferIdx,
   ) void {
-    self.renderingContext.endCommandBufferWriting(self.*, commandBuffer);
+    self.rasterizer.endCommandBufferWriting(self.*, commandBuffer);
   }
 
   // enqueues a command to the command buffer
@@ -831,6 +777,12 @@ pub const Context = struct {
       action = .{.pipelineBarrier = command};
     } else if (@TypeOf(command) == mtr.command.UploadTexelToImageMemory) {
       action = .{.uploadTexelToImageMemory = command};
+    } else if (@TypeOf(command) == mtr.command.BindPipeline) {
+      action = .{.bindPipeline = command};
+    } else if (@TypeOf(command) == mtr.command.Dispatch) {
+      action = .{.dispatch = command};
+    } else if (@TypeOf(command) == mtr.command.BindDescriptorSets) {
+      action = .{.bindDescriptorSets = command};
     } else {
       unreachable; // if this hits, probably need to add the command
     }
@@ -841,7 +793,7 @@ pub const Context = struct {
     ).* = action;
 
     self
-      .renderingContext
+      .rasterizer
       .enqueueToCommandBuffer(self, commandBufferIdx, action);
   }
 
@@ -855,7 +807,7 @@ pub const Context = struct {
 
     std.debug.assert(queue != null);
 
-    self.renderingContext.submitCommandBufferToQueue(
+    self.rasterizer.submitCommandBufferToQueue(
       self, queue.?.*, commandBuffer.*,
     );
   }
@@ -864,7 +816,7 @@ pub const Context = struct {
     var queue : ? * mtr.queue.Primitive = self.queues.getPtr(queueIdx);
     std.debug.assert(queue != null);
 
-    self.renderingContext.queueFlush(self, queue.?.*);
+    self.rasterizer.queueFlush(self, queue.?.*);
   }
 
   pub fn mapMemory(
@@ -881,7 +833,7 @@ pub const Context = struct {
     //     and memory.mapping == .Write
     //   )
     // );
-    return self.renderingContext.mapMemory(self, range);
+    return self.rasterizer.mapMemory(self, range);
   }
 
   pub fn mapMemoryBuffer(
@@ -902,7 +854,7 @@ pub const Context = struct {
     self : @This(),
     memory : mtr.util.MappedMemory,
   ) void {
-    return self.renderingContext.unmapMemory(self, memory);
+    return self.rasterizer.unmapMemory(self, memory);
   }
 
   pub fn constructPipeline(
@@ -926,15 +878,16 @@ pub const Context = struct {
     self : * @This(),
     ci : mtr.shader.ConstructInfo,
     idx : mtr.shader.Idx,
-  ) !mtr.shaderModule.Idx {
+  ) !mtr.shader.Idx {
     const shaderModule = mtr.shader.Module {
+      .data = ci.data,
       .contextIdx = idx,
     };
     // TODO assert NO overlap
 
-    self.renderingContext.createShaderModule(self.*, shaderModule, ci.memory);
+    try self.rasterizer.createShaderModule(self.*, shaderModule);
 
-    try self.shaderModules.putNoClobber(idx, shaderModule);
+    // try self.shaderModules.putNoClobber(idx, shaderModule);
 
     return shaderModule.contextIdx;
   }
@@ -947,28 +900,141 @@ pub const Context = struct {
     return self.createShaderModuleWithId(ci, prevIdx);
   }
 
-  // pub fn createDescriptorSetPoolWithId(
-  //   self : *@This(),
-  //   id : u64
-  // ) mtr.pipeline.DescriptorSetPoolIdx {
-  //   self.renderingContext.createDescriptorSetPool(self.*, id);
+  pub fn createDescriptorSetPoolWithId(
+    self : *@This(),
+    ci : mtr.descriptor.SetPoolCreateInfo,
+    id : u64,
+  ) !mtr.descriptor.PoolIdx {
+    const descriptorSetPool = mtr.descriptor.SetPool {
+      .frequency = ci.frequency,
+      .maxSets = ci.maxSets,
+      .descriptorSizes = ci.descriptorSizes,
+      .contextIdx = id,
+    };
+    try self.descriptorSetPools.putNoClobber(id, descriptorSetPool);
+    try self.rasterizer.createDescriptorSetPool(self.*, descriptorSetPool);
 
-  //   return id;
-  // }
+    return id;
+  }
 
-  // fn createDescriptorSetPool(
-  //   self : * @This(),
-  //   id : u64,
-  // ) mtr.pipeline.DescriptorSetPoolIdx {
-  //   const prevIdx = self.allocIdx;
-  //   self.allocIdx += 1;
-  //   return self.createDescriptorSetPoolWithId(id);
-  // }
+  pub fn createDescriptorSetPool(
+    self : * @This(),
+    ci : mtr.descriptor.SetPoolCreateInfo,
+  ) !mtr.descriptor.PoolIdx {
+    const prevIdx = self.allocIdx;
+    self.allocIdx += 1;
+    return self.createDescriptorSetPoolWithId(ci, prevIdx);
+  }
 
-  // pub fn createDescriptorSetWriter(
-  //   self : * @This(),
-  // ) mtr.pipeline.DescriptorSetWriter {
-  //   return mtr.pipeline.DescriptorSetWriter.init(self);
-  // }
+  pub fn createDescriptorSetWithId(
+    self : * @This(),
+    ci : mtr.descriptor.Set,
+    id : u64
+  ) !mtr.descriptor.SetIdx {
+    var descriptorSet = ci;
+    descriptorSet.contextIdx = id;
+    try self.descriptorSets.putNoClobber(id, descriptorSet);
+    try self.rasterizer.createDescriptorSet(self.*, descriptorSet);
 
+    return id;
+  }
+
+  pub fn createDescriptorSet(
+    self : * @This(),
+    ci : mtr.descriptor.Set,
+  ) !mtr.descriptor.SetIdx {
+    const prevIdx = self.allocIdx;
+    self.allocIdx += 1;
+    return self.createDescriptorSetWithId(ci, prevIdx);
+  }
+
+  pub fn createDescriptorSetLayoutWithId(
+    self : *@This(),
+    ci : mtr.descriptor.SetLayoutConstructInfo,
+    id : u64
+  ) !mtr.descriptor.LayoutIdx {
+    const setLayout = (
+      mtr.descriptor.SetLayout.init(self.primitiveAllocator, ci, id)
+    );
+
+    try self.descriptorSetLayouts.putNoClobber(id, setLayout);
+    try self.rasterizer.createDescriptorSetLayout(self.*, setLayout);
+
+    return id;
+  }
+
+  pub fn createDescriptorSetLayout(
+    self : * @This(),
+    ci : mtr.descriptor.SetLayoutConstructInfo,
+  ) !mtr.descriptor.LayoutIdx {
+    const prevIdx = self.allocIdx;
+    self.allocIdx += 1;
+    return self.createDescriptorSetLayoutWithId(ci, prevIdx);
+  }
+
+  pub fn createDescriptorSetWriter(
+    self : * @This(),
+    layout : mtr.descriptor.LayoutIdx,
+    destinationSet : mtr.descriptor.SetIdx,
+  ) mtr.descriptor.SetWriter {
+    const mtLayout = self.descriptorSetLayouts.get(layout).?;
+    return mtr.descriptor.SetWriter.init(self, mtLayout, destinationSet);
+  }
+
+  pub fn createPipelineLayoutWithId(
+    self : * @This(),
+    ci : mtr.pipeline.Layout,
+    idx : mtr.pipeline.LayoutIdx,
+  ) !mtr.pipeline.LayoutIdx {
+    var pipelineLayout = ci;
+    pipelineLayout.contextIdx = idx;
+    try self.rasterizer.createPipelineLayout(self.*, pipelineLayout);
+    try self.pipelineLayouts.putNoClobber(idx, pipelineLayout);
+    return idx;
+  }
+
+  pub fn createPipelineLayout(
+    self : * @This(),
+    ci : mtr.pipeline.Layout,
+  ) !mtr.pipeline.LayoutIdx {
+    const prevIdx = self.allocIdx;
+    self.allocIdx += 1;
+    return self.createPipelineLayoutWithId(ci, prevIdx);
+  }
+
+  pub fn createComputePipelineWithId(
+    self : * @This(),
+    ci : mtr.pipeline.Compute,
+    idx : mtr.pipeline.ComputeIdx,
+  ) !mtr.pipeline.ComputeIdx {
+    var pipeline = ci;
+    pipeline.contextIdx = idx;
+    try self.rasterizer.createComputePipeline(self.*, pipeline);
+    try self.computePipelines.putNoClobber(idx, pipeline);
+    return idx;
+  }
+
+  pub fn createComputePipeline(
+    self : * @This(),
+    ci : mtr.pipeline.Compute,
+  ) !mtr.pipeline.ComputeIdx {
+    const prevIdx = self.allocIdx;
+    self.allocIdx += 1;
+    return self.createComputePipelineWithId(ci, prevIdx);
+  }
+
+  // -- utils ------------------------------------------------------------------
+  pub fn createHeapRegionAllocator(
+    self : * @This(),
+    visibility : mtr.heap.Visibility,
+  ) mtr.util.HeapRegionAllocator {
+    return mtr.util.HeapRegionAllocator.init(self, visibility);
+  }
+
+  pub fn createCommandBufferRecorder(
+    self : * @This(),
+    commandBuffer : mtr.command.BufferIdx,
+  ) mtr.util.CommandBufferRecorder {
+    return mtr.util.CommandBufferRecorder.init(self, commandBuffer);
+  }
 };
