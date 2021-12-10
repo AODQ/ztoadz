@@ -76,24 +76,13 @@ pub const context    = @import("context.zig");
 pub const descriptor = @import("descriptor.zig");
 pub const heap       = @import("heap.zig");
 pub const image      = @import("image.zig");
+pub const memory     = @import("memory.zig");
 pub const pipeline   = @import("pipeline.zig");
 pub const queue      = @import("queue.zig");
 pub const shader     = @import("shader.zig");
 pub const util       = @import("util/package.zig");
 
 pub const Context = context.Context;
-
-pub const AccessFlags = packed struct {
-  shaderRead : bool = false,
-  shaderWrite : bool = false,
-  uniformRead : bool = false,
-  colorAttachmentRead : bool = false,
-  colorAttachmentWrite : bool = false,
-  transferRead : bool = false,
-  transferWrite : bool = false,
-  hostRead : bool = false,
-  hostWrite : bool = false,
-};
 
 pub const RenderingOptimizationLevel = enum {
   release, debug,

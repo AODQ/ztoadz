@@ -8,11 +8,12 @@ fn compareValues(failStr : anytype, actual : u8, expected : u8,) void {
   }
 }
 
-test "pipeline - UVCoord To Screen" {
-  // clears the screen to UVcoord
+test "pipeline - simple graph" {
+  // rasterizes a simple graph by setting each pixel to a specific line in a
+  // shader storage buffer
 
   const moduleFileData align(@alignOf(u32)) = (
-    @embedFile("../shaders/clear-screen-uv.spv")
+    @embedFile("../shaders/simple-graph-line.spv")
   );
 
   std.testing.log_level = .debug;
@@ -84,6 +85,7 @@ test "pipeline - UVCoord To Screen" {
   // create descriptor set
 
   const outputColorImageBinding : u32 = 0;
+  const inputGraphBinding       : u32 = 1;
 
   const descriptorSetPoolPerFrame = (
     try mtrCtx.createDescriptorSetPool(.{
@@ -96,21 +98,6 @@ test "pipeline - UVCoord To Screen" {
         .storageImage = 10,
         .uniformBuffer = 10,
       },
-    })
-  );
-
-  const descriptorSetLayoutPerFrame = (
-    try mtrCtx.createDescriptorSetLayout(.{
-      .pool = descriptorSetPoolPerFrame,
-      .frequency = .perFrame,
-      .bindings = (
-        (&[_] mtr.descriptor.SetLayoutBinding {
-          mtr.descriptor.SetLayoutBinding{
-            .descriptorType = .storageImage,
-            .binding = outputColorImageBinding,
-          },
-        })
-      ),
     })
   );
 
@@ -130,7 +117,7 @@ test "pipeline - UVCoord To Screen" {
         .byteFormat = mtr.image.ByteFormat.uint8,
         .channels = mtr.image.Channel.RGBA,
         .normalized = true,
-        .queueSharing = mtr.queue.SharingUsage.exclusive,
+        .queueSharing = .exclusive,
       })
     );
   }
@@ -138,6 +125,63 @@ test "pipeline - UVCoord To Screen" {
   // image view of output color image
   var outputColorImageView = try (
     mtrCtx.createImageView(.{.image = outputColorImage, })
+  );
+
+  // input graph
+  var inputGraphBuffer : mtr.buffer.Idx = 0;
+  {
+    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+    defer _ = heapRegionAllocator.finish();
+
+    inputGraphBuffer = try (
+      heapRegionAllocator.createBuffer(.{
+        .offset = 0,
+        .length = @sizeOf(u32)*512,
+        .usage = (
+          mtr.buffer.Usage { .bufferStorage = true, .transferDst = true }
+        ),
+        .queueSharing = .exclusive,
+      })
+    );
+  }
+
+  {
+    var inputGraph = std.ArrayList(u32).init(&debugAllocator.allocator);
+    defer inputGraph.deinit();
+    try inputGraph.resize(512);
+
+    var rnd = std.rand.Xoroshiro128.init(0);
+
+    for (inputGraph.items) |_, idx| {
+      inputGraph.items[idx] = rnd.random().int(u32) % 512;
+    }
+    try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
+      .queue = queue,
+      .commandBuffer = commandBufferScratch,
+      .bufferDst = inputGraphBuffer,
+      .memoryToUpload = std.mem.sliceAsBytes(inputGraph.items),
+    });
+
+    mtrCtx.queueFlush(queue);
+  }
+
+  const descriptorSetLayoutPerFrame = (
+    try mtrCtx.createDescriptorSetLayout(.{
+      .pool = descriptorSetPoolPerFrame,
+      .frequency = .perFrame,
+      .bindings = (
+        (&[_] mtr.descriptor.SetLayoutBinding {
+          mtr.descriptor.SetLayoutBinding{
+            .descriptorType = .storageImage,
+            .binding = outputColorImageBinding,
+          },
+          mtr.descriptor.SetLayoutBinding{
+            .descriptorType = .storageBuffer,
+            .binding = inputGraphBinding,
+          },
+        })
+      ),
+    })
   );
 
   const pipelineLayout = (
@@ -178,6 +222,13 @@ test "pipeline - UVCoord To Screen" {
       .{
         .binding = outputColorImageBinding,
         .imageView = outputColorImageView,
+      },
+    );
+
+    try descriptorSetByFrameWriter.set(
+      .{
+        .binding = inputGraphBinding,
+        .buffer = inputGraphBuffer,
       },
     );
   }
@@ -231,7 +282,7 @@ test "pipeline - UVCoord To Screen" {
   }
 
   mtrCtx.submitCommandBufferToQueue(queue, commandBufferScratch);
-  mtrCtx.queueFlush(queue); // TODO use fence
+  mtrCtx.queueFlush(queue);
 
   try mtr.util.screenshot.storeImageToFile(
     &mtrCtx, .{
@@ -240,7 +291,7 @@ test "pipeline - UVCoord To Screen" {
       .commandBuffer = commandBufferScratch,
       .imageToStore = outputColorImage,
       .imageToStoreTape = &outputColorImageTape,
-      .filename = "clear-screen-uvcoord.ppm",
+      .filename = "simple-graph.ppm",
     }
   );
 }

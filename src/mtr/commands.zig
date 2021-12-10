@@ -16,6 +16,25 @@ pub const ActionType = enum {
   pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
 };
 
+pub const PipelineBarrier = struct {
+  actionType : mtr.command.ActionType = .pipelineBarrier,
+  srcStage : mtr.pipeline.StageFlags,
+  dstStage : mtr.pipeline.StageFlags,
+  imageTapes : [] ImageTapeAction = &[_] ImageTapeAction {},
+  bufferTapes : [] BufferTapeAction = &[_] BufferTapeAction {},
+
+  pub const ImageTapeAction = struct {
+    tape : * mtr.memory.ImageTape,
+    layout : mtr.image.Layout,
+    accessFlags : mtr.memory.AccessFlags,
+  };
+
+  pub const BufferTapeAction = struct {
+    tape : * mtr.memory.BufferTape,
+    accessFlags : mtr.memory.AccessFlags,
+  };
+};
+
 // transfers memory from one buffer to another. The source and destination
 // buffer may be the same
 pub const TransferMemory = struct {
@@ -54,39 +73,6 @@ pub const TransferImage = struct {
   layers : u64, mipmaps : u64
 };
 
-pub const PipelineBarrier = struct {
-  actionType : mtr.command.ActionType = .pipelineBarrier,
-  srcStage : mtr.pipeline.StageFlags,
-  dstStage : mtr.pipeline.StageFlags,
-  imageTapes : [] ImageTapeAction = &[_] ImageTapeAction {},
-  bufferTapes : [] BufferTapeAction = &[_] BufferTapeAction {},
-
-  pub const ImageTapeAction = struct {
-    tape : * ImageTape,
-    layout : mtr.image.Layout,
-    accessFlags : mtr.AccessFlags,
-  };
-
-  pub const BufferTapeAction = struct {
-    tape : * BufferTape,
-    accessFlags : mtr.AccessFlags,
-  };
-};
-
-pub const BufferTape = struct {
-  buffer : mtr.buffer.Idx,
-  offset : usize = 0,
-  length : usize = 0, // implied to be entire buffer
-  accessFlags : mtr.AccessFlags = .{},
-};
-
-// tapes allow you to keep track of the current state while recording commands
-pub const ImageTape = struct {
-  image : mtr.image.Idx,
-  layout : mtr.image.Layout = .uninitialized,
-  accessFlags : mtr.AccessFlags = .{},
-};
-
 pub const imageRangeEnd : i64 = -1;
 
 // uploads a single texel to image memory, copying it to the entire specified
@@ -94,7 +80,7 @@ pub const imageRangeEnd : i64 = -1;
 pub const UploadTexelToImageMemory = struct {
   // TODO vectors duh
   actionType : mtr.command.ActionType = .uploadTexelToImageMemory,
-  imageTape : mtr.command.ImageTape,
+  imageTape : mtr.memory.ImageTape,
   rgba : [4] f32,
   dimXBegin : i64 = 0, dimXEnd : i64 = imageRangeEnd,
   dimYBegin : i64 = 0, dimYEnd : i64 = imageRangeEnd,

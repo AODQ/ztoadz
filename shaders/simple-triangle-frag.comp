@@ -1,0 +1,111 @@
+#version 460
+#extension GL_EXT_shader_explicit_arithmetic_types : enable
+
+layout (local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
+
+layout (set = 0, binding = 0, rgba8ui)
+  uniform writeonly uimage2D outputImageColor;
+
+layout (set = 0, binding = 1) buffer TriangleVertexAssembly {
+  vec4 inputOrigins[];
+};
+
+layout (set = 0, binding = 2) buffer TriangleVertexAssemblyMetadata {
+  uint32_t numTriangles;
+};
+
+vec3 computeBarycentricUv(
+  vec2 b0, vec2 b1, vec2 b2,
+  vec2 ori
+) {
+  vec2
+    v0 = b1  - b0,
+    v1 = b2  - b0,
+    v2 = ori - b0
+  ;
+
+  float
+    d00 = dot(v0, v0),
+    d01 = dot(v0, v1),
+    d11 = dot(v1, v1),
+    d20 = dot(v2, v0),
+    d21 = dot(v2, v1)
+  ;
+
+  float denom = d00*d11 - d01*d01;
+  float v = (d11*d20 - d01*d21) / denom;
+  float w = (d00*d21 - d01*d20) / denom;
+  return vec3(1.0f-v-w, v, w);
+}
+
+vec4 rasterizeTriangle(
+  const vec2 uv,
+  const uint triangleId,
+  out float depth
+) {
+  vec4 inputOrigin0 = inputOrigins[triangleId + 0];
+  vec4 inputOrigin1 = inputOrigins[triangleId + 1];
+  vec4 inputOrigin2 = inputOrigins[triangleId + 2];
+
+  vec3 bUv = (
+    computeBarycentricUv(
+      inputOrigin0.xy,
+      inputOrigin1.xy,
+      inputOrigin2.xy,
+      uv
+    )
+  );
+
+  if (!(bUv.x >= 0.0f && bUv.y >= 0.0f && bUv.z >= 0.0f)) {
+    depth = 0.0f;
+    return vec4(0.0f);
+  }
+
+  depth = (
+    /* inputOrigin0.z*bUv.x */
+  /* + inputOrigin1.z*bUv.y */
+  + inputOrigin2.z*bUv.z
+  );
+
+  vec2 uvCoord = (
+    inputOrigin0.xy*bUv.x
+  + inputOrigin1.xy*bUv.y
+  + inputOrigin2.xy*bUv.z
+  );
+
+  return vec4(bUv.xyz, 1.0f);
+}
+
+vec4 mtEntry(const vec2 uv, const uvec3 dispatchId) {
+  vec4 outputColor = vec4(0.0f);
+  float outputDepth = 0.0f;
+  for (uint32_t i = 0; i < 11; ++ i) {
+    float interDepth = 0.0;
+    vec4 interColor = rasterizeTriangle(uv, i*3, interDepth);
+    if (interDepth > outputDepth)
+    {
+      outputDepth = interDepth;
+      outputColor = interColor;
+    }
+  }
+  return outputColor;
+}
+
+uvec4 toSrgb(const vec4 inp) {
+  return uvec4(inp * vec4(255.0f));
+}
+
+void main() {
+  const ivec2 imageColorDim = imageSize(outputImageColor);
+  const vec2 uvcoord = vec2(gl_GlobalInvocationID.xy) / vec2(imageColorDim);
+
+  if (uvcoord.x > 1.0f || uvcoord.y > 1.0f) {
+    return;
+  }
+
+  imageStore(
+    outputImageColor,
+    ivec2(gl_GlobalInvocationID.xy),
+    toSrgb(mtEntry(uvcoord, gl_GlobalInvocationID.xyz))
+  );
+}

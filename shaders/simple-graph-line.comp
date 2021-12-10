@@ -1,0 +1,42 @@
+#version 460
+#extension GL_EXT_shader_explicit_arithmetic_types : enable
+
+layout (local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
+
+layout (set = 0, binding = 0, rgba8ui)
+  uniform writeonly uimage2D outputImageColor;
+
+layout (set = 0, binding = 1) buffer GraphInput {
+  uint32_t inputGraphVertices[];
+};
+
+uvec4 toSrgb(const vec4 inp) {
+  return uvec4(inp * vec4(255.0f));
+}
+
+vec4 mtEntry(const vec2 uv, const uvec2 dispatchId) {
+  uint32_t inputVert = inputGraphVertices[dispatchId.x];
+  return (
+    vec4(
+      dispatchId.y > inputVert ? 1.0f : 0.0f,
+      dispatchId.y < inputVert ? 0.0f : 1.0f,
+      0.5,
+      1.0f
+    )
+  );
+}
+
+void main() {
+  const ivec2 imageColorDim = imageSize(outputImageColor);
+  const vec2 uvcoord = vec2(gl_GlobalInvocationID.xy) / vec2(imageColorDim);
+
+  if (uvcoord.x > 1.0f || uvcoord.y > 1.0f) {
+    return;
+  }
+
+  imageStore(
+    outputImageColor,
+    ivec2(gl_GlobalInvocationID.xy),
+    toSrgb(mtEntry(uvcoord, gl_GlobalInvocationID.xy))
+  );
+}

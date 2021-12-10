@@ -6,10 +6,10 @@ pub const ViewIdx = u64;
 
 pub const ConstructInfo = struct {
   offset : u64, // TODO change for buffer/image 'offset' -> 'offsetIntoHeap'
-  width : u64, height : u64, depth : u64,
+  width : u32, height : u32, depth : u32,
   samplesPerTexel : mtr.image.Sample,
-  arrayLayers : u64,
-  mipmapLevels : u64,
+  arrayLayers : u32,
+  mipmapLevels : u32,
   byteFormat : mtr.image.ByteFormat,
   channels : mtr.image.Channel,
   normalized : bool = true,
@@ -59,10 +59,10 @@ pub const ByteFormat = enum {
 pub const Primitive = struct {
   allocatedHeapRegion : mtr.heap.RegionIdx,
   offset : u64, // TODO change for buffer/image 'offset' -> 'offsetIntoHeap'
-  width : u64, height : u64, depth : u64,
+  width : u32, height : u32, depth : u32,
   samplesPerTexel : mtr.image.Sample,
-  arrayLayers : u64,
-  mipmapLevels : u64,
+  arrayLayers : u32,
+  mipmapLevels : u32,
   byteFormat : mtr.image.ByteFormat,
   channels : mtr.image.Channel,
   normalized : bool,

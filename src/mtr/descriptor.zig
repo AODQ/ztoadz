@@ -109,6 +109,11 @@ pub const SetLayout = struct {
       }
 
       (bindingArray.?.addOne() catch unreachable).* = binding;
+
+      std.debug.assert(
+        self.bindingIdxToLayoutBinding.get(binding.binding) == null
+      );
+
       self.bindingIdxToLayoutBinding.putNoClobber(binding.binding, binding)
         catch {
         std.log.err(

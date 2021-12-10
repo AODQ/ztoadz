@@ -67,7 +67,7 @@ fn imageLayoutToVk(layout : mtr.image.Layout) vk.ImageLayout {
   };
 }
 
-fn accessFlagsToVk(flags : mtr.AccessFlags) vk.AccessFlags {
+fn accessFlagsToVk(flags : mtr.memory.AccessFlags) vk.AccessFlags {
   return vk.AccessFlags {
     .shaderReadBit = flags.shaderRead,
     .shaderWriteBit = flags.shaderWrite,
@@ -383,13 +383,18 @@ const VulkanDeviceContext = struct {
       , .queueCount = 1
       , .pQueuePriorities = &priority
       }
-    // , .{
-    //     .flags = .{}
-    //   , .queueFamilyIndex = self.deviceQueue.transferIdx
-    //   , .queueCount = 1
-    //   , .pQueuePriorities = &priority
-    //   }
     };
+
+    var feature8BitStorage : vk.PhysicalDevice8BitStorageFeatures = undefined;
+
+    // TODO some function like
+    // assertDeviceFeatures(&[_] features {
+    //   .{
+    //      vk.PhysicalDevice8BitStorageFeatures,
+    //      .storageBuffer8BitAccess = true,
+    //      etc
+    //   }
+    // });
 
     // buffer device address feature -
     var featureBufferDeviceAddress :
@@ -401,24 +406,29 @@ const VulkanDeviceContext = struct {
     };
 
     zeroInitInPlace(&featureBufferDeviceAddress);
+    zeroInitInPlace(&feature8BitStorage);
     zeroInitInPlace(&features.features);
+
+    feature8BitStorage.sType = .physicalDevice8BitStorageFeatures;
+    featureBufferDeviceAddress.pNext = &feature8BitStorage;
 
     featureBufferDeviceAddress.sType = (
       .physicalDeviceBufferDeviceAddressFeatures
     );
 
-    vki.getPhysicalDeviceFeatures2(
-      self.physicalDevice,
-      &features
-    );
+    vki.getPhysicalDeviceFeatures2(self.physicalDevice, &features);
+
     std.debug.assert(
       featureBufferDeviceAddress.bufferDeviceAddress == vk.TRUE
     );
     zeroInitInPlace(&features.features);
 
-    featureBufferDeviceAddress.bufferDeviceAddress              = vk.TRUE;
-    featureBufferDeviceAddress.bufferDeviceAddressMultiDevice   = vk.FALSE;
-    featureBufferDeviceAddress.bufferDeviceAddressCaptureReplay = vk.FALSE;
+    std.debug.assert(
+      feature8BitStorage.storageBuffer8BitAccess == vk.TRUE
+    );
+    std.debug.assert(
+      feature8BitStorage.uniformAndStorageBuffer8BitAccess == vk.TRUE
+    );
 
     // ray query feature -
     // var featureRayQuery = vk.PhysicalDeviceRayQueryFeaturesKHR {
@@ -459,6 +469,7 @@ const VulkanDeviceContext = struct {
     // );
 
     // featureAccelerationStructure.pNext = &hostQueryResetFeature;
+
 
     self.device = try (
       vki.createDevice(
@@ -664,6 +675,8 @@ pub const Rasterizer = struct {
       vk.extension_info.khrSwapchain.name,
       vk.extension_info.khrDeferredHostOperations.name,
       vk.extension_info.khrCopyCommands2.name,
+      vk.extension_info.khr8BitStorage.name,
+      vk.extension_info.khr16BitStorage.name,
       // vk.extension_info.khrRayTracingPipeline,
       // vk.extension_info.khrAccelerationStructure.name,
       // vk.extension_info.khrRayQuery.name,
@@ -1636,7 +1649,7 @@ pub const Rasterizer = struct {
             .newLayout = imageLayoutToVk(imageTape.layout),
             .image = self.images.get(imageTape.tape.image).?.handle,
             .subresourceRange = subresourceRange,
-            .srcAccessMask = accessFlagsToVk(imageTape.accessFlags),
+            .srcAccessMask = accessFlagsToVk(imageTape.tape.accessFlags),
             .dstAccessMask = accessFlagsToVk(imageTape.accessFlags),
             .srcQueueFamilyIndex = vkQueue.familyIndex,
             .dstQueueFamilyIndex = vkQueue.familyIndex,
@@ -1837,24 +1850,33 @@ pub const Rasterizer = struct {
     defer descriptorWrites.deinit();
     try descriptorWrites.resize(writer.writes.items.len);
 
+    var descriptorImageWrites = (
+      std.ArrayList(vk.DescriptorImageInfo).init(self.allocator)
+    );
+    defer descriptorImageWrites.deinit();
+    var descriptorBufferWrites = (
+      std.ArrayList(vk.DescriptorBufferInfo).init(self.allocator)
+    );
+    defer descriptorBufferWrites.deinit();
+
     for (writer.writes.items) |descriptorWrite, idx| {
-      var descriptorImageInfo : ? vk.DescriptorImageInfo = null;
-      var descriptorBufferInfo : ? vk.DescriptorBufferInfo = null;
+      var descriptorImageInfo : ? * vk.DescriptorImageInfo = null;
+      var descriptorBufferInfo : ? * vk.DescriptorBufferInfo = null;
 
       // TODO allow multiple items
 
       if (descriptorWrite.imageView != null) {
-        // var mtDescriptorImageView = (
-        //   context.imageViews.getPtr(binding.imageView.?).?
-        // );
         var vkDescriptorImageView = (
           self.imageViews.get(descriptorWrite.imageView.?).?
         );
-        descriptorImageInfo = .{
+        (try descriptorImageWrites.addOne()).* = .{
           .imageView = vkDescriptorImageView,
           .imageLayout = .general,
           .sampler = .null_handle, // TODO
         };
+        descriptorImageInfo = (
+          &descriptorImageWrites.items[descriptorImageWrites.items.len-1]
+        );
       }
 
       if (descriptorWrite.buffer != null) {
@@ -1864,7 +1886,7 @@ pub const Rasterizer = struct {
         var vkDescriptorBuffer = (
           self.buffers.get(descriptorWrite.buffer.?).?
         );
-        descriptorBufferInfo = .{
+        (try descriptorBufferWrites.addOne()).* = .{
           .buffer = vkDescriptorBuffer,
           .offset = descriptorWrite.bufferOffset,
           .range = (
@@ -1875,6 +1897,9 @@ pub const Rasterizer = struct {
             )
           ),
         };
+        descriptorBufferInfo = (
+          &descriptorBufferWrites.items[descriptorBufferWrites.items.len-1]
+        );
       }
 
       const binding = (
@@ -1891,14 +1916,14 @@ pub const Rasterizer = struct {
           if (descriptorImageInfo == null) (
             undefined
           ) else (
-            @ptrCast([*] const vk.DescriptorImageInfo, &descriptorImageInfo.?)
+            @ptrCast([*] const vk.DescriptorImageInfo, descriptorImageInfo.?)
           )
         ),
         .pBufferInfo = (
           if (descriptorBufferInfo == null) (
             undefined
           ) else (
-            @ptrCast([*] const vk.DescriptorBufferInfo, &descriptorBufferInfo.?)
+            @ptrCast([*] const vk.DescriptorBufferInfo, descriptorBufferInfo.?)
           )
         ),
         .pTexelBufferView = undefined,

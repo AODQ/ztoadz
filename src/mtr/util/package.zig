@@ -1,5 +1,6 @@
 pub const json = @import("json.zig");
 pub const snapshot = @import("snapshot.zig");
+pub const screenshot = @import("screenshot.zig");
 
 const mtr = @import("../package.zig");
 const std = @import("std");
@@ -63,8 +64,6 @@ pub const HeapRegionAllocator = struct {
     if (self.suballocations.items.len == 0) {
       return 0; // TODO return null handle
     }
-
-    std.log.info("tracking offset: {}", .{self.trackingOffset});
 
     var memoryRequirements = (
       std
@@ -224,3 +223,67 @@ pub const CommandBufferRecorder = struct {
     self.mtrCtx.enqueueToCommandBuffer(self.commandBuffer, command);
   }
 };
+
+pub const StageMemoryToBufferParams = struct {
+  queue : mtr.queue.Idx,
+  commandBuffer : mtr.command.BufferIdx,
+  bufferDst : mtr.buffer.Idx,
+  memoryToUpload : [] const u8,
+};
+
+pub fn stageMemoryToBuffer(
+  mtrCtx : * mtr.Context,
+  params : StageMemoryToBufferParams,
+) !void {
+  var stagingBuffer : mtr.buffer.Idx = 0;
+  var heapRegion : mtr.heap.RegionIdx = 0;
+  // defer mtrCtx.destroyBuffer(stagingBuffer);
+  // defer mtrCtx.destroyHeapRegion(heapRegion);
+  { // -- create staging buffer
+    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.hostWritable);
+    defer heapRegion = heapRegionAllocator.finish();
+
+    stagingBuffer = try (
+      heapRegionAllocator.createBuffer(.{
+        .offset = 0,
+        .length = @sizeOf(u8)*params.memoryToUpload.len,
+        .usage = mtr.buffer.Usage{ .transferSrc = true },
+        .queueSharing = mtr.queue.SharingUsage.exclusive,
+      })
+    );
+  }
+
+  { // -- copy data
+    var mappedMemory = try mtrCtx.mapMemoryBuffer(.{
+      .mapping = mtr.util.MappingType.Write,
+      .buffer = stagingBuffer,
+      .offset = 0, .length = @sizeOf(u8)*params.memoryToUpload.len,
+    });
+    defer mtrCtx.unmapMemory(mappedMemory);
+
+    std.mem.copy(
+      u8,
+      mappedMemory.ptr[0..params.memoryToUpload.len],
+      params.memoryToUpload
+    );
+  }
+
+  {
+    var commandBufferRecorder = (
+      mtrCtx.createCommandBufferRecorder(params.commandBuffer)
+    );
+    defer commandBufferRecorder.finish();
+
+    commandBufferRecorder.append(
+      mtr.command.TransferMemory {
+        .bufferSrc = stagingBuffer,
+        .bufferDst = params.bufferDst,
+        .offsetSrc = 0,
+        .offsetDst = 0,
+        .length = @sizeOf(u8)*params.memoryToUpload.len,
+      },
+    );
+  }
+
+  mtrCtx.submitCommandBufferToQueue(params.queue, params.commandBuffer);
+}
