@@ -25,7 +25,7 @@ test "buffer mapping + transfer" {
 
   var mtrCtx = (
     mtr.Context.init(
-      &debugAllocator.allocator,
+      debugAllocator.allocator(),
       mtr.RenderingOptimizationLevel.debug,
     )
   );

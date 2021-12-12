@@ -1,3 +1,3 @@
-pub usingnamespace @import("mesh.zig");
-pub usingnamespace @import("scene.zig");
-pub usingnamespace @import("loader.zig");
+pub const mesh = @import("mesh.zig");
+pub const scene = @import("scene.zig");
+pub const loader = @import("loader.zig");

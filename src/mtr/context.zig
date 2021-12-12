@@ -41,7 +41,7 @@ pub const Context = struct {
     std.AutoHashMap(mtr.command.BufferIdx, mtr.command.PoolIdx)
   ),
 
-  primitiveAllocator : * std.mem.Allocator,
+  primitiveAllocator : std.mem.Allocator,
 
   rasterizer : * backend.context.Rasterizer,
   optimization : mtr.RenderingOptimizationLevel,
@@ -56,7 +56,7 @@ pub const Context = struct {
   pub const utilContextIdx : u64 = 0;
 
   pub fn init(
-    primitiveAllocator : * std.mem.Allocator,
+    primitiveAllocator : std.mem.Allocator,
     optimization : mtr.RenderingOptimizationLevel,
   ) @This() {
     var allocatedRasterizer = (
@@ -68,7 +68,7 @@ pub const Context = struct {
     allocatedRasterizer .* = (
       backend.context.Rasterizer.init(primitiveAllocator)
       catch |err| {
-        std.log.crit(
+        std.log.err(
           "{s} ({s})",
           .{
             "could not create the rendering backend: ",
@@ -118,7 +118,7 @@ pub const Context = struct {
 
   pub fn initFromSnapshot(
     jsonSnapshot : [] const u8,
-    primitiveAllocator : * std.mem.Allocator,
+    primitiveAllocator : std.mem.Allocator,
     rasterizer : backend.context.Rasterizer,
     optimization : mtr.RenderingOptimizationLevel,
   ) !@This() {
@@ -536,6 +536,7 @@ pub const Context = struct {
       .arrayLayers = ci.arrayLayers,
       .byteFormat = ci.byteFormat,
       .channels = ci.channels,
+      .usage = ci.usage,
       .normalized = ci.normalized,
       .mipmapLevels = ci.mipmapLevels,
       .queueSharing = ci.queueSharing,

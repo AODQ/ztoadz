@@ -206,7 +206,7 @@ pub const Buffer = struct {
   commandRecordings : std.ArrayList(mtr.command.Action),
   idx : u64,
 
-  pub fn init(alloc : * std.mem.Allocator) @This() {
+  pub fn init(alloc : std.mem.Allocator) @This() {
     // TODO this should only be enabled in debug builds
     return .{
       .commandRecordings = std.ArrayList(mtr.command.Action).init(alloc),

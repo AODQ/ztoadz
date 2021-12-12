@@ -79,7 +79,7 @@ pub const SetLayout = struct {
   contextIdx : LayoutIdx,
 
   pub fn init(
-    alloc : * std.mem.Allocator,
+    alloc : std.mem.Allocator,
     ci : SetLayoutConstructInfo,
     contextIdx : LayoutIdx,
   ) @This() {

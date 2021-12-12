@@ -4,6 +4,11 @@ const std = @import("std");
 const glfw = @import("glfw.zig");
 const vkDispatcher = @import("vulkan-dispatchers.zig");
 const vk = @import("../../../../bindings/vulkan.zig");
+const context = @import("context.zig");
+
+// TODO maybe at some point surface this thru MTR instead of hiding it,
+// but it's such a chore to set up and there really is minimal configuration
+// an application would want
 
 pub const VulkanSwapchain = struct {
 
@@ -17,13 +22,13 @@ pub const VulkanSwapchain = struct {
   imageIdx : u32,
   nextImageAcquired : vk.Semaphore,
 
-  vkd : * const VulkanDeviceContext,
+  vkd : * const context.VulkanDeviceContext,
 
   pub fn reinit(
-    allocator : * std.mem.Allocator
+    allocator : std.mem.Allocator
   , vki : vkDispatcher.VulkanInstanceDispatch
   , surface : vk.SurfaceKHR
-  , vkd : * const VulkanDeviceContext
+  , vkd : * const context.VulkanDeviceContext
   , extent : vk.Extent2D
   , oldSwapchainHandle : vk.SwapchainKHR
   ) !@This() {
@@ -83,9 +88,9 @@ pub const VulkanSwapchain = struct {
     }
 
     //
-    const concurrent = vkd.queueGTC.family != vkd.queuePresent.family;
+    const concurrent = vkd.deviceQueue.gtcIdx != vkd.deviceQueue.presentIdx;
     const queueFamilyIndices = [_] u32 {
-      vkd.queueGTC.family, vkd.queuePresent.family
+      vkd.deviceQueue.gtcIdx, vkd.deviceQueue.presentIdx
     };
 
     // spec states:
@@ -94,6 +99,16 @@ pub const VulkanSwapchain = struct {
     //   destroyed
     // Thus the surface component of a swapchain can be reused
     // chap34.html#VkSwapchainCreateInfoKHR
+
+    for (queueFamilyIndices) |qfi| {
+      std.debug.assert(
+        (try vki.getPhysicalDeviceSurfaceSupportKHR(
+          vkd.physicalDevice,
+          qfi,
+          surface,
+        )) == vk.TRUE
+      );
+    }
 
     const handle = try vkd.vkdd.createSwapchainKHR(
       vkd.device
@@ -110,7 +125,7 @@ pub const VulkanSwapchain = struct {
       , .queueFamilyIndexCount = queueFamilyIndices.len
       , .pQueueFamilyIndices = &queueFamilyIndices
       , .preTransform = capabilities.currentTransform
-      , .compositeAlpha = .{.opaqueBitKhr = true}
+      , .compositeAlpha = .{.opaqueBitKHR = true}
       , .presentMode = presentMode
       , .clipped = vk.TRUE
       , .oldSwapchain = oldSwapchainHandle
@@ -179,10 +194,10 @@ pub const VulkanSwapchain = struct {
   }
 
   pub fn init(
-    allocator : * std.mem.Allocator
+    allocator : std.mem.Allocator
   , vki : vkDispatcher.VulkanInstanceDispatch
   , surface : vk.SurfaceKHR
-  , vkd : * const VulkanDeviceContext
+  , vkd : * const context.VulkanDeviceContext
   , extent : vk.Extent2D
   ) !@This() {
     return try reinit(allocator, vki, surface, vkd, extent, .null_handle);
@@ -211,7 +226,9 @@ pub const VulkanSwapchain = struct {
   };
 
   pub fn PerformSwap(
-    self : * @This(), cmdbuf : vk.CommandBuffer, vkd : VulkanDeviceContext
+    self : * @This(),
+    cmdbuf : vk.CommandBuffer,
+    vkd : context.VulkanDeviceContext
   ) !PresentState
   {
     // wait for / reset fence of acquired image
@@ -225,7 +242,7 @@ pub const VulkanSwapchain = struct {
     // submit command buffer
     const waitStage = [_]vk.PipelineStageFlags {.{.topOfPipeBit = true}};
     try vkd.queueSubmit(
-      vkd.queueGTC.handle
+      vkd.deviceQueue.gtcIdx
     , 1
     , &[_]vk.SubmitInfo {.{
         .waitSemaphoreCount = 1
@@ -308,11 +325,11 @@ pub const VulkanSwapchain = struct {
   fn SelectPresentMode(presentModes : [] vk.PresentModeKHR)
     vk.PresentModeKHR
   {
-    var bestMode = vk.PresentModeKHR.fifo_khr;
+    var bestMode = vk.PresentModeKHR.fifoKHR;
 
     for (presentModes) |mode| {
-      if (mode == vk.PresentModeKHR.mailbox_khr) { return mode; }
-      if (mode == vk.PresentModeKHR.immediate_khr) { bestMode = mode; }
+      if (mode == vk.PresentModeKHR.mailboxKHR) { return mode; }
+      if (mode == vk.PresentModeKHR.immediateKHR) { bestMode = mode; }
     }
 
     return bestMode;
@@ -321,17 +338,17 @@ pub const VulkanSwapchain = struct {
   fn SelectSurfaceFormat(formats: [] vk.SurfaceFormatKHR)
     vk.SurfaceFormatKHR
   {
-    if (formats.len == 1 and formats[0].format == vk.Format.undefined_) {
+    if (formats.len == 1 and formats[0].format == vk.Format.@"undefined") {
       return vk.SurfaceFormatKHR {
-        .format = vk.Format.b8g8r8a8_unorm
-      , .colorSpace = vk.ColorSpaceKHR.srgb_nonlinear_khr
+        .format = vk.Format.b8g8r8a8Unorm
+      , .colorSpace = vk.ColorSpaceKHR.srgbNonlinearKHR
       };
     }
 
     for (formats) |format| {
       if (
-        format.format == vk.Format.b8g8r8a8_unorm
-        and format.colorSpace == vk.ColorSpaceKHR.srgb_nonlinear_khr
+        format.format == vk.Format.b8g8r8a8Unorm
+        and format.colorSpace == vk.ColorSpaceKHR.srgbNonlinearKHR
       ) {
         return format;
       }
@@ -347,10 +364,12 @@ pub const VulkanSwapchainImage = struct {
   semaphoreImageAcquired : vk.Semaphore,
   semaphoreRenderFinished : vk.Semaphore,
   fenceFrame : vk.Fence,
-  vkd : * const VulkanDeviceContext,
+  vkd : * const context.VulkanDeviceContext,
 
   pub fn init(
-    vkd : * const VulkanDeviceContext, image : vk.Image, format : vk.Format
+    vkd : * const context.VulkanDeviceContext,
+    image : vk.Image,
+    format : vk.Format
   ) !@This() {
     const view =
       try vkd.vkdd.createImageView(
@@ -358,7 +377,7 @@ pub const VulkanSwapchainImage = struct {
       , .{
           .flags = .{}
         , .image = image
-        , .viewType = .i2d
+        , .viewType = .@"2D"
         , .format = format
         , .components = .{
             .r = .identity, .g = .identity, .b = .identity, .a = .identity
@@ -426,7 +445,7 @@ pub const VulkanSwapchainImage = struct {
     self.vkd.vkdd.destroyImageView(self.vkd.device, self.view, null);
   }
 
-  pub fn WaitForFence(self : @This(), vkd : VulkanDeviceContext) !void {
+  pub fn WaitForFence(self : @This(), vkd : context.VulkanDeviceContext) !void {
     _ = (
       try vkd.vkdd.waitForFences(
         vkd.device, 1, @ptrCast([*] const vk.Fence, &self.fenceFrame)

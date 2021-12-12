@@ -31,7 +31,7 @@ test "pipeline - UVCoord To Screen" {
 
   var mtrCtx = (
     mtr.Context.init(
-      &debugAllocator.allocator,
+      debugAllocator.allocator(),
       mtr.RenderingOptimizationLevel.debug,
     )
   );
@@ -61,7 +61,7 @@ test "pipeline - UVCoord To Screen" {
   //   @alignCast(@alignOf(u32), moduleFileData[0 .. std.mem.len(moduleFileData)])
   // );
   var moduleFileDataAsSlice = (
-    std.ArrayListAligned(u8, @alignOf(u32)).init(&debugAllocator.allocator)
+    std.ArrayListAligned(u8, @alignOf(u32)).init(debugAllocator.allocator())
   );
   defer moduleFileDataAsSlice.deinit();
   try moduleFileDataAsSlice.resize(std.mem.len(moduleFileData));

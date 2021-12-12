@@ -1,10 +1,10 @@
 #version 460
-#extension GL_EXT_shader_explicit_arithmetic_types : enable
+#extension GL_EXT_shader_image_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types : require
 
-layout (local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
+layout (local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
-layout (set = 0, binding = 0, rgba8ui)
-  uniform writeonly uimage2D outputImageColor;
+layout (set = 0, binding = 0, r64ui) uniform u64image2D visibilitySurfaceImage;
 
 layout (set = 0, binding = 1) buffer TriangleVertexAssembly {
   vec4 inputOrigins[];
@@ -38,57 +38,53 @@ vec3 computeBarycentricUv(
   return vec3(1.0f-v-w, v, w);
 }
 
-vec4 rasterizeTriangle(
+float rasterizeTriangle(
   const vec2 uv,
-  const uint triangleId,
-  out float depth
+  const uint triangleId
 ) {
-  vec4 inputOrigin0 = inputOrigins[triangleId + 0];
-  vec4 inputOrigin1 = inputOrigins[triangleId + 1];
-  vec4 inputOrigin2 = inputOrigins[triangleId + 2];
+  vec4 origin0 = inputOrigins[triangleId + 0];
+  vec4 origin1 = inputOrigins[triangleId + 1];
+  vec4 origin2 = inputOrigins[triangleId + 2];
 
-  vec3 bUv = (
-    computeBarycentricUv(
-      inputOrigin0.xy,
-      inputOrigin1.xy,
-      inputOrigin2.xy,
-      uv
-    )
+  mat3 baseVertices = mat3(
+    origin0.x, origin1.x, origin2.x,
+    origin0.y, origin1.y, origin2.y,
+    origin0.z, origin1.z, origin2.z
   );
 
-  if (!(bUv.x >= 0.0f && bUv.y >= 0.0f && bUv.z >= 0.0f)) {
-    depth = 0.0f;
-    return vec4(0.0f);
+  // backface culling, need to do from options
+  /* if (determinant(baseVertices) <= 0.0f) { */
+  /*   return 0.0f; */
+  /* } */
+
+  baseVertices = inverse(baseVertices);
+
+  vec3 E0 = baseVertices[0];
+  vec3 E1 = baseVertices[1];
+  vec3 E2 = baseVertices[2];
+
+  vec3 uvw = vec3(uv, 1.0f);
+
+  vec3 edge = vec3(dot(E0, uvw), dot(E1, uvw), dot(E2, uvw));
+
+  if (edge.x < 0.0f || edge.y < 0.0f || edge.z < 0.0f) {
+    return 0.0f;
   }
 
-  depth = (
-    /* inputOrigin0.z*bUv.x */
-  /* + inputOrigin1.z*bUv.y */
-  + inputOrigin2.z*bUv.z
-  );
+  // interpolate 1/w at fragment
+  vec3 perspectiveCorrection = baseVertices * vec3(1.0f);
+  float oneOverW = dot(perspectiveCorrection, uvw);
 
-  vec2 uvCoord = (
-    inputOrigin0.xy*bUv.x
-  + inputOrigin1.xy*bUv.y
-  + inputOrigin2.xy*bUv.z
-  );
+  // w = 1/(1/w)
+  float w = 1.0f/oneOverW;
 
-  return vec4(bUv.xyz, 1.0f);
-}
+  vec3 zVec = baseVertices * vec3(origin0.z, origin1.z, origin2.z);
+  float zOverW = dot(zVec, uvw);
+  float z = zOverW * w;
+  return 1.0f/z;
 
-vec4 mtEntry(const vec2 uv, const uvec3 dispatchId) {
-  vec4 outputColor = vec4(0.0f);
-  float outputDepth = 0.0f;
-  for (uint32_t i = 0; i < 11; ++ i) {
-    float interDepth = 0.0;
-    vec4 interColor = rasterizeTriangle(uv, i*3, interDepth);
-    if (interDepth > outputDepth)
-    {
-      outputDepth = interDepth;
-      outputColor = interColor;
-    }
-  }
-  return outputColor;
+  /* // interpolate Z */
+  /* float zOverW = */ 
 }
 
 uvec4 toSrgb(const vec4 inp) {
@@ -96,16 +92,46 @@ uvec4 toSrgb(const vec4 inp) {
 }
 
 void main() {
-  const ivec2 imageColorDim = imageSize(outputImageColor);
-  const vec2 uvcoord = vec2(gl_GlobalInvocationID.xy) / vec2(imageColorDim);
+  const ivec2 imageColorDim = imageSize(visibilitySurfaceImage);
+  const ivec3 dispatchId = ivec3(gl_GlobalInvocationID.xyz);
 
-  if (uvcoord.x > 1.0f || uvcoord.y > 1.0f) {
-    return;
+  const uint32_t triangleIt = dispatchId.x;
+
+  vec4 v0 = inputOrigins[triangleIt*3+0];
+  vec4 v1 = inputOrigins[triangleIt*3+1];
+  vec4 v2 = inputOrigins[triangleIt*3+2];
+
+  vec2 t0 = v0.xy/v0.z;
+  vec2 t1 = v1.xy/v1.z;
+  vec2 t2 = v2.xy/v2.z;
+
+  /* t0 = (t0 * vec2(2.0f)) - vec2(1.0f); */
+  /* t1 = (t1 * vec2(2.0f)) - vec2(1.0f); */
+  /* t2 = (t2 * vec2(2.0f)) - vec2(1.0f); */
+
+  ivec2 minBounds = ivec2(0);
+  ivec2 maxBounds = ivec2(imageColorDim);
+
+  /* minBounds.x = int(min(t0.x, min(t1.x, t2.x))*imageColorDim.x); */
+  /* maxBounds.x = int(max(t0.x, max(t1.x, t2.x))*imageColorDim.x); */
+  /* minBounds.x = 0; */
+  /* maxBounds.x = 250; */
+
+  minBounds = ivec2(min(t0, min(t1, t2))*imageColorDim.xy);
+  maxBounds = ivec2(max(t0, max(t1, t2))*imageColorDim.xy);
+  /* minBounds = ivec2(0); */
+  /* maxBounds = ivec2(250); */
+
+  for (int itX = minBounds.x; itX < maxBounds.x; ++ itX)
+  for (int itY = minBounds.y; itY < maxBounds.y; ++ itY) {
+    vec2 uvcoord = vec2(itX, itY) / vec2(imageColorDim);
+    /* uvcoord = (uvcoord * vec2(2.0f)) - vec2(1.0f); */
+    float interDepth = rasterizeTriangle(uvcoord, triangleIt*3);
+    if (interDepth > 0.0f && interDepth <= 1.0f) {
+      uint32_t depthU32 = floatBitsToUint(interDepth);
+      uint32_t triangleIdU32 = uint32_t(triangleIt);
+      uint64_t triangleStore = triangleIdU32 | (uint64_t(depthU32) << 32);
+      imageAtomicMax(visibilitySurfaceImage, ivec2(itX, itY), triangleStore);
+    }
   }
-
-  imageStore(
-    outputImageColor,
-    ivec2(gl_GlobalInvocationID.xy),
-    toSrgb(mtEntry(uvcoord, gl_GlobalInvocationID.xyz))
-  );
 }

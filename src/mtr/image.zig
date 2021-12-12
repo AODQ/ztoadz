@@ -12,6 +12,7 @@ pub const ConstructInfo = struct {
   mipmapLevels : u32,
   byteFormat : mtr.image.ByteFormat,
   channels : mtr.image.Channel,
+  usage : ImageUsageFlags = {},
   normalized : bool = true,
   queueSharing : mtr.queue.SharingUsage,
 };
@@ -44,6 +45,7 @@ pub const Channel = enum {
 
 pub const ByteFormat = enum {
   uint8,
+  uint64,
   // uint16, uint32, float32
 
   pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
@@ -51,9 +53,17 @@ pub const ByteFormat = enum {
   pub fn byteLength(self : @This()) u64 {
     return switch(self) {
       .uint8 => 1,
+      .uint64 => 8,
       // uint16 => 2, uint32 => 4, float32 => 4,
     };
   }
+};
+
+pub const ImageUsageFlags = packed struct {
+  transferSrc : bool = false,
+  transferDst : bool = false,
+  sampled : bool = false,
+  storage : bool = false,
 };
 
 pub const Primitive = struct {
@@ -66,6 +76,7 @@ pub const Primitive = struct {
   byteFormat : mtr.image.ByteFormat,
   channels : mtr.image.Channel,
   normalized : bool,
+  usage : ImageUsageFlags = {},
   queueSharing : mtr.queue.SharingUsage,
   contextIdx : mtr.image.Idx,
   // TODO maybe usage flags? (transfer src/dst)

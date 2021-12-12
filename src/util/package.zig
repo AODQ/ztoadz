@@ -3,7 +3,7 @@
 const std = @import("std");
 
 pub fn readFileAlignedU32(
-  allocator : * std.mem.Allocator,
+  allocator : std.mem.Allocator,
   filename : [] const u8,
 ) !std.ArrayListAligned(u8, @alignOf(u32)) {
   var fileData = std.ArrayListAligned(u8, @alignOf(u32)).init(allocator);

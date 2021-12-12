@@ -3,10 +3,53 @@ const std = @import("std");
 
 const glfw = @import("glfw.zig");
 const vkDispatcher = @import("vulkan-dispatchers.zig");
+const vkSwapchain = @import("swapchain.zig");
 const vk = @import("../../../../bindings/vulkan.zig");
 
 fn zeroInitInPlace(ptr : anytype) void {
   ptr.* = std.mem.zeroInit(std.meta.Child(@TypeOf(ptr)), .{});
+}
+
+// creates a stack of features, returns the head of the stack
+// the head needs to be freed with `freeVkFeatureList`
+pub fn enableVkFeatureList(
+  features : anytype,
+) !?*c_void {
+  var currentPNext : ?* c_void = null;
+  switch (@typeInfo(@TypeOf(features))) {
+    .Struct => |structType| {
+      inline for (structType.fields) |field| {
+        var newMember : *@TypeOf(@field(features, field.name)) = (
+          @ptrCast(
+            *@TypeOf(@field(features, field.name)),
+            @alignCast(
+              @alignOf(@TypeOf(@field(features, field.name))),
+              std.c.malloc(@sizeOf(@TypeOf(@field(features, field.name))))
+            ).?
+          )
+        );
+        newMember.* = @field(features, field.name);
+        newMember.pNext = currentPNext;
+        currentPNext = newMember;
+      }
+    },
+    else => @compileError("unknown"),
+  }
+  return currentPNext;
+}
+
+pub fn freeVkFeatureList(
+  featureListHead : ?* c_void,
+) void {
+  var currentPNext : ?* c_void = featureListHead;
+  while (currentPNext != null) {
+    // just assume it's something (doesn't matter) and grab pNext
+    var nextPNext = (
+      @ptrCast(*vk.PhysicalDeviceFeatures2, @alignCast(8, currentPNext)).pNext
+    );
+    std.c.free(currentPNext);
+    currentPNext = nextPNext;
+  }
 }
 
 pub fn toImageType(image : mtr.image.Primitive) vk.ImageType {
@@ -23,6 +66,11 @@ pub fn imageToVkFormat(image : mtr.image.Primitive) vk.Format {
       .R => vk.Format.r8Uint,
       .RGB => vk.Format.r8g8b8Uint,
       .RGBA => vk.Format.r8g8b8a8Uint,
+    },
+    .uint64 => switch (image.channels) {
+      .R => vk.Format.r64Uint,
+      .RGB => vk.Format.r64g64b64Uint,
+      .RGBA => vk.Format.r64g64b64a64Uint,
     },
   };
 }
@@ -202,7 +250,7 @@ const CommandBuffer = struct {
 
   pub fn init(
     commandPool : mtr.command.PoolIdx,
-    alloc : * std.mem.Allocator,
+    alloc : std.mem.Allocator,
   ) @This() {
     return @This() {
       .buffers = std.ArrayList(vk.CommandBuffer).init(alloc),
@@ -220,7 +268,7 @@ const Image = struct {
 };
 
 /// graphics context for a device backing the current application
-const VulkanDeviceContext = struct {
+pub const VulkanDeviceContext = struct {
 
   physicalDevice : vk.PhysicalDevice,
   device : vk.Device,
@@ -238,7 +286,7 @@ const VulkanDeviceContext = struct {
   deviceQueue : VulkanDeviceQueues,
 
   pub fn init(
-    allocator : * std.mem.Allocator
+    allocator : std.mem.Allocator
   , vki : vkDispatcher.VulkanInstanceDispatch
   , physicalDevice : vk.PhysicalDevice
   , deviceExtensions : [] const [*:0] const u8
@@ -385,97 +433,30 @@ const VulkanDeviceContext = struct {
       }
     };
 
-    var feature8BitStorage : vk.PhysicalDevice8BitStorageFeatures = undefined;
-
-    // TODO some function like
-    // assertDeviceFeatures(&[_] features {
-    //   .{
-    //      vk.PhysicalDevice8BitStorageFeatures,
-    //      .storageBuffer8BitAccess = true,
-    //      etc
-    //   }
-    // });
-
-    // buffer device address feature -
-    var featureBufferDeviceAddress :
-      vk.PhysicalDeviceBufferDeviceAddressFeatures = undefined;
-
-    var features = vk.PhysicalDeviceFeatures2 {
-      .pNext = &featureBufferDeviceAddress,
-      .features = undefined,
-    };
-
-    zeroInitInPlace(&featureBufferDeviceAddress);
-    zeroInitInPlace(&feature8BitStorage);
-    zeroInitInPlace(&features.features);
-
-    feature8BitStorage.sType = .physicalDevice8BitStorageFeatures;
-    featureBufferDeviceAddress.pNext = &feature8BitStorage;
-
-    featureBufferDeviceAddress.sType = (
-      .physicalDeviceBufferDeviceAddressFeatures
+    var enabledFeatureList = try (
+      enableVkFeatureList(
+        .{
+          vk.PhysicalDeviceFeatures2 {
+            .features = .{
+              .shaderFloat64 = vk.TRUE,
+              .shaderInt64 = vk.TRUE,
+              .shaderInt16 = vk.TRUE,
+            }
+          },
+          vk.PhysicalDeviceShaderImageAtomicInt64FeaturesEXT {
+            .shaderImageInt64Atomics = vk.TRUE,
+            .sparseImageInt64Atomics = vk.TRUE,
+          },
+        },
+      )
     );
-
-    vki.getPhysicalDeviceFeatures2(self.physicalDevice, &features);
-
-    std.debug.assert(
-      featureBufferDeviceAddress.bufferDeviceAddress == vk.TRUE
-    );
-    zeroInitInPlace(&features.features);
-
-    std.debug.assert(
-      feature8BitStorage.storageBuffer8BitAccess == vk.TRUE
-    );
-    std.debug.assert(
-      feature8BitStorage.uniformAndStorageBuffer8BitAccess == vk.TRUE
-    );
-
-    // ray query feature -
-    // var featureRayQuery = vk.PhysicalDeviceRayQueryFeaturesKHR {
-    //   .rayQuery = vk.TRUE,
-    // };
-
-    // featureBufferDeviceAddress.pNext = &featureRayQuery;
-
-    // raytracing -
-    // var featureRaytracing = vk.PhysicalDeviceRayTracingPipelineFeaturesKHR {
-    //   .rayTracingPipeline = vk.TRUE,
-    //   .rayTracingPipelineShaderGroupHandleCaptureReplay = vk.FALSE, // TODO
-    //   .rayTracingPipelineShaderGroupHandleCaptureReplayMixed = vk.FALSE,
-    //   .rayTracingPipelineTraceRaysIndirect = vk.TRUE,
-    //   .rayTraversalPrimitiveCulling = vk.TRUE,
-    // };
-
-    // featureBufferDeviceAddress.pNext = &featureRaytracing;
-
-    // acceleration structure feature -
-    // var featureAccelerationStructure = (
-    //   vk.PhysicalDeviceAccelerationStructureFeaturesKHR {
-    //     .accelerationStructure = vk.TRUE,
-    //     .accelerationStructureCaptureReplay = vk.FALSE, // TODO for now false
-    //     .accelerationStructureIndirectBuild = vk.FALSE,
-    //     .accelerationStructureHostCommands = vk.FALSE,
-    //     .descriptorBindingAccelerationStructureUpdateAfterBind = vk.FALSE,
-    //   }
-    // );
-
-    // featureRaytracing.pNext = &featureAccelerationStructure;
-
-    // host query reset feature -
-    // var hostQueryResetFeature = (
-    //   vk.PhysicalDeviceHostQueryResetFeatures {
-    //     .hostQueryReset = vk.TRUE,
-    //   }
-    // );
-
-    // featureAccelerationStructure.pNext = &hostQueryResetFeature;
-
+    defer freeVkFeatureList(enabledFeatureList);
 
     self.device = try (
       vki.createDevice(
         self.physicalDevice, .{
           .flags = .{},
-          .pNext = &features,
+          .pNext = enabledFeatureList,
           .queueCreateInfoCount = deviceQueueCreateInfo.len,
           .pQueueCreateInfos = &deviceQueueCreateInfo,
           .enabledLayerCount = 0,
@@ -508,7 +489,7 @@ const VulkanDeviceContext = struct {
 
 fn constructInstance(
   vkb : vkDispatcher.VulkanBaseDispatch,
-  allocator : * std.mem.Allocator,
+  allocator : std.mem.Allocator,
   instanceCreatePNext : * const c_void,
 ) !vk.Instance {
   const appInfo = vk.ApplicationInfo {
@@ -562,7 +543,7 @@ fn constructInstance(
 }
 
 fn constructDevices(
-  allocator : * std.mem.Allocator
+  allocator : std.mem.Allocator
 , vki : vkDispatcher.VulkanInstanceDispatch
 , instance : vk.Instance
 , deviceExtensions : [] const [*:0] const u8
@@ -638,9 +619,12 @@ pub const Heap = struct {
 };
 
 pub const Rasterizer = struct {
-  allocator : * std.mem.Allocator,
+  allocator : std.mem.Allocator,
   // context : c.cl_context,
   // device : c.cl_device_id,
+
+  glfwSurface : vk.SurfaceKHR,
+  swapchain : vkSwapchain.VulkanSwapchain,
 
   heaps : std.AutoHashMap(mtr.heap.RegionIdx, Heap),
   heapRegions : std.AutoHashMap(mtr.heap.RegionIdx, vk.DeviceMemory),
@@ -670,13 +654,15 @@ pub const Rasterizer = struct {
   vkd : * VulkanDeviceContext, // pointer to device in arraylist
   glfwWindow : * glfw.c.GLFWwindow,
 
-  pub fn init(allocator : * std.mem.Allocator) ! @This() {
+  pub fn init(allocator : std.mem.Allocator) ! @This() {
     const requiredDeviceExtensions = [_][*:0] const u8 {
       vk.extension_info.khrSwapchain.name,
       vk.extension_info.khrDeferredHostOperations.name,
       vk.extension_info.khrCopyCommands2.name,
       vk.extension_info.khr8BitStorage.name,
       vk.extension_info.khr16BitStorage.name,
+      vk.extension_info.khrShaderAtomicInt64.name,
+      vk.extension_info.extShaderImageAtomicInt64.name,
       // vk.extension_info.khrRayTracingPipeline,
       // vk.extension_info.khrAccelerationStructure.name,
       // vk.extension_info.khrRayQuery.name,
@@ -728,7 +714,25 @@ pub const Rasterizer = struct {
       )
     );
 
-    var self = .{
+    var surface : vk.SurfaceKHR = undefined;
+    std.debug.assert(
+      glfw.glfwCreateWindowSurface(instance, window, null, &surface)
+      == .success
+    );
+
+    var swapchain = try (
+      vkSwapchain.VulkanSwapchain.init(
+        allocator, vki, surface, &devices.items[0],
+        vk.Extent2D {
+          .width = 640,
+          .height = 480,
+        },
+      )
+    );
+
+    var self = @This() {
+      .glfwSurface = surface,
+      .swapchain = swapchain,
       .allocator = allocator,
       .heaps = std.AutoHashMap(mtr.heap.RegionIdx, Heap).init(allocator),
       .heapRegions = (
@@ -795,7 +799,7 @@ pub const Rasterizer = struct {
 
   pub fn deinit(self : * @This()) void {
     // -- deinit device-related info
-    // self.swapchain.deinit();
+    self.swapchain.deinit();
 
     var shaderModuleIter = self.shaderModules.iterator();
     while (shaderModuleIter.next()) |shaderModule| {
@@ -908,9 +912,9 @@ pub const Rasterizer = struct {
     self.devices.deinit();
 
     // -- deinit instance
-    // if (self.surface != .null_handle) {
-    //   self.vki.destroysurfacekhr(self.instance, self.surface, null);
-    // }
+    if (self.glfwSurface != .null_handle) {
+      self.vki.destroySurfaceKHR(self.instance, self.glfwSurface, null);
+    }
 
     if (self.instance != .null_handle) {
       self.vki.destroyInstance(self.instance, null);
@@ -958,7 +962,7 @@ pub const Rasterizer = struct {
         null,
       )
       catch |err| {
-        std.log.crit("{s}{}", .{"could not create shader module: ", err});
+        std.log.err("{s}{}", .{"could not create shader module: ", err});
         return;
       }
     );
@@ -1290,7 +1294,7 @@ pub const Rasterizer = struct {
     self.vkd.vkdd.bindBufferMemory(
       self.vkd.device, vkBuffer, vkDeviceMemory, buffer.offset
     ) catch |err| {
-      std.log.crit("Could not bind buffer memory {}", .{err});
+      std.log.err("Could not bind buffer memory {}", .{err});
     };
   }
 
@@ -1350,7 +1354,7 @@ pub const Rasterizer = struct {
       vkDeviceMemory,
       image.offset
     ) catch |err| {
-      std.log.crit("Could not bind buffer memory {}", .{err});
+      std.log.err("Could not bind buffer memory {}", .{err});
     };
   }
 
@@ -1401,10 +1405,10 @@ pub const Rasterizer = struct {
           .samples = toSampleCountFlags(image),
           .tiling = vk.ImageTiling.optimal,
           .usage = vk.ImageUsageFlags {
-            .transferSrcBit = true, // TODO
-            .transferDstBit = true,
-            .sampledBit = true,
-            .storageBit = true,
+            .transferSrcBit = image.usage.transferSrc,
+            .transferDstBit = image.usage.transferDst,
+            .sampledBit = image.usage.sampled,
+            .storageBit = image.usage.storage,
           },
           .sharingMode = toSharingMode(image),
           .queueFamilyIndexCount = 0,

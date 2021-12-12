@@ -1,0 +1,47 @@
+#version 460
+#extension GL_EXT_shader_image_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types : enable
+
+layout (local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
+
+layout (set = 0, binding = 0, r64ui)
+  uniform readonly u64image2D visibilitySurfaceImage;
+
+layout (set = 0, binding = 1, rgba8ui)
+  uniform writeonly uimage2D outputColorImage;
+
+vec4 mtEntry(const vec2 uv, const ivec2 dispatchId) {
+  uint64_t surface = imageLoad(visibilitySurfaceImage, dispatchId.xy).x;
+  uint32_t triangleIdU32 = uint32_t(surface & 0xFFFFFFFF);
+  uint32_t depthU32 = uint32_t((surface >> 32) & 0xFFFFFFFF);
+  float depth = uintBitsToFloat(depthU32);
+  if (surface > 0) {
+    return vec4(
+      depth,
+      depth,
+      fract(sin(83.21*triangleIdU32)*812.32f),
+      1.0f
+    );
+  }
+  return vec4(0.0f);
+}
+
+uvec4 toSrgb(const vec4 inp) {
+  return uvec4(inp * vec4(255.0f));
+}
+
+void main() {
+  const ivec2 imageColorDim = imageSize(outputColorImage);
+  const ivec3 dispatchId = ivec3(gl_GlobalInvocationID.xyz);
+  const vec2 uvcoord = vec2(dispatchId.xy) / vec2(imageColorDim);
+
+  if (uvcoord.x > 1.0f || uvcoord.y > 1.0f) {
+    return;
+  }
+
+  imageStore(
+    outputColorImage,
+    dispatchId.xy,
+    toSrgb(mtEntry(uvcoord, dispatchId.xy))
+  );
+}

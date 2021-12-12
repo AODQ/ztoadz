@@ -1,7 +1,7 @@
 const std = @import("std");
 const Builder = std.build.Builder;
 
-fn AddShader(
+fn addShader(
   builder : * std.build.Builder,
   exe : anytype, fileIn : [] const u8, fileOut : [] const u8,
 ) !void {
@@ -17,7 +17,9 @@ fn AddShader(
 
   const runCmd =
     builder.addSystemCommand(
-      &[_][] const u8 { "glslc", fullFileIn, "-o", fullFileOut }
+      &[_][] const u8 {
+        "glslc", "--target-env=vulkan1.2", fullFileIn, "-o", fullFileOut
+      }
     );
   exe.step.dependOn(&runCmd.step);
 }
@@ -31,17 +33,37 @@ pub fn build(builder: * std.build.Builder) !void {
   tester.linkSystemLibrary("glfw");
   tester.linkSystemLibrary("vulkan");
   tester.setMainPkgPath(".");
+
   testStep.dependOn(&tester.step);
 
-  const mode = builder.standardReleaseOptions();
-  const exe = builder.addExecutable("ztoadz", "src/main.zig");
-  exe.setBuildMode(mode);
+  try addShader(
+    builder, tester,
+    "simple-triangle-vert.comp", "simple-triangle-vert.spv"
+  );
 
-  exe.linkSystemLibrary("c");
+  try addShader(
+    builder, tester,
+    "simple-triangle-frag.comp", "simple-triangle-frag.spv"
+  );
 
-  exe.linkSystemLibrary("glfw");
-  exe.linkSystemLibrary("vulkan");
+  try addShader(
+    builder, tester,
+    "simple-triangle-postproc.comp", "simple-triangle-postproc.spv"
+  );
 
-  builder.default_step.dependOn(&exe.step);
-  exe.install();
+  // const mode = builder.standardReleaseOptions();
+  // const exe = builder.addExecutable("ztoadz", "src/main.zig");
+
+  // builder.addSystemCommand(
+  //   &[_] [] u8 { &[_] u8 { "cd shaders/" }, "./recompile-shaders.sh" }
+  // );
+  // exe.setBuildMode(mode);
+
+  // exe.linkSystemLibrary("c");
+
+  // exe.linkSystemLibrary("glfw");
+  // exe.linkSystemLibrary("vulkan");
+
+  // builder.default_step.dependOn(&exe.step);
+  // exe.install();
 }

@@ -28,7 +28,7 @@ test "pipeline - simple triangle" {
 
   var mtrCtx = (
     mtr.Context.init(
-      &debugAllocator.allocator,
+      debugAllocator.allocator(),
       mtr.RenderingOptimizationLevel.debug,
     )
   );
@@ -55,7 +55,7 @@ test "pipeline - simple triangle" {
 
   const fragmentModuleFileData = try (
     util.readFileAlignedU32(
-      &debugAllocator.allocator,
+      debugAllocator.allocator(),
       "shaders/simple-triangle-frag.spv"
     )
   );
@@ -69,9 +69,25 @@ test "pipeline - simple triangle" {
     )
   );
 
+  const postprocModuleFileData = try (
+    util.readFileAlignedU32(
+      debugAllocator.allocator(),
+      "shaders/simple-triangle-postproc.spv"
+    )
+  );
+  defer postprocModuleFileData.deinit();
+
+  const postprocShaderModule = (
+    try mtrCtx.createShaderModule(
+      mtr.shader.ConstructInfo {
+        .data = postprocModuleFileData.items,
+      }
+    )
+  );
+
   const vertexModuleFileData = try (
     util.readFileAlignedU32(
-      &debugAllocator.allocator,
+      debugAllocator.allocator(),
       "shaders/simple-triangle-vert.spv"
     )
   );
@@ -121,6 +137,7 @@ test "pipeline - simple triangle" {
         .mipmapLevels = 1,
         .byteFormat = mtr.image.ByteFormat.uint8,
         .channels = mtr.image.Channel.RGBA,
+        .usage = .{ .transferSrc = true, .storage = true, },
         .normalized = true,
         .queueSharing = .exclusive,
       })
@@ -130,6 +147,31 @@ test "pipeline - simple triangle" {
   // image view of output color image
   var outputColorImageView = try (
     mtrCtx.createImageView(.{.image = outputColorImage, })
+  );
+
+  var visibilitySurfaceImage : mtr.image.Idx = 0;
+  {
+    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+    defer _ = heapRegionAllocator.finish();
+
+    visibilitySurfaceImage = try (
+      heapRegionAllocator.createImage(.{
+        .offset = 0,
+        .width = 512, .height = 512, .depth = 1,
+        .samplesPerTexel = mtr.image.Sample.s1,
+        .arrayLayers = 1,
+        .mipmapLevels = 1,
+        .byteFormat = mtr.image.ByteFormat.uint64,
+        .channels = mtr.image.Channel.R,
+        .usage = .{ .storage = true, },
+        .normalized = true,
+        .queueSharing = .exclusive,
+      })
+    );
+  }
+
+  var visibilitySurfaceImageView = try (
+    mtrCtx.createImageView(.{.image = visibilitySurfaceImage, })
   );
 
   // input triangle VAsm
@@ -268,7 +310,7 @@ test "pipeline - simple triangle" {
         (&[_] mtr.descriptor.SetLayoutBinding {
           mtr.descriptor.SetLayoutBinding{
             .descriptorType = .storageImage,
-            .binding = outputColorImageBinding,
+            .binding = 0,
           },
           mtr.descriptor.SetLayoutBinding{
             .descriptorType = .storageBuffer,
@@ -322,6 +364,33 @@ test "pipeline - simple triangle" {
     })
   );
 
+  const descriptorSetLayoutPostprocPerFrame = (
+    try mtrCtx.createDescriptorSetLayout(.{
+      .pool = descriptorSetPoolPerFrame,
+      .frequency = .perFrame,
+      .bindings = (
+        (&[_] mtr.descriptor.SetLayoutBinding {
+          mtr.descriptor.SetLayoutBinding{
+            .descriptorType = .storageImage,
+            .binding = 0,
+          },
+          mtr.descriptor.SetLayoutBinding{
+            .descriptorType = .storageImage,
+            .binding = 1,
+          },
+        })
+      ),
+    })
+  );
+
+  const postprocPipelineLayout = (
+    try mtrCtx.createPipelineLayout(.{
+      .descriptorSetLayouts = &[_] mtr.descriptor.LayoutIdx {
+        descriptorSetLayoutPostprocPerFrame
+      },
+    })
+  );
+
   var computeFragmentPipeline = try (
     mtrCtx.createComputePipeline(.{
       .computeFlags = .{},
@@ -339,6 +408,16 @@ test "pipeline - simple triangle" {
       .shaderModule = vertexShaderModule,
       .pName = "main",
       .layout = vertexPipelineLayout,
+    })
+  );
+
+  var computePostprocPipeline = try (
+    mtrCtx.createComputePipeline(.{
+      .computeFlags = .{},
+      .stageFlags = .{},
+      .shaderModule = postprocShaderModule,
+      .pName = "main",
+      .layout = postprocPipelineLayout,
     })
   );
 
@@ -361,7 +440,7 @@ test "pipeline - simple triangle" {
     try descriptorSetByFrameWriter.set(
       .{
         .binding = outputColorImageBinding,
-        .imageView = outputColorImageView,
+        .imageView = visibilitySurfaceImageView,
       },
     );
 
@@ -416,8 +495,43 @@ test "pipeline - simple triangle" {
     );
   }
 
+  var descriptorSetPostprocPerFrame = try (
+    mtrCtx.createDescriptorSet(.{
+      .pool = descriptorSetPoolPerFrame,
+      .layout = descriptorSetLayoutPostprocPerFrame,
+    })
+  );
+
+  { // -- write POSTPROC per-frame descriptors
+    var descriptorSetByFrameWriter = (
+      mtrCtx.createDescriptorSetWriter( // TODO use struct
+        descriptorSetLayoutPostprocPerFrame, // .descriptorSetLayout =
+        descriptorSetPostprocPerFrame, // .descriptorSet =
+      )
+    );
+    defer descriptorSetByFrameWriter.finish();
+
+    try descriptorSetByFrameWriter.set(
+      .{
+        .binding = 0,
+        .imageView = visibilitySurfaceImageView,
+      },
+    );
+
+    try descriptorSetByFrameWriter.set(
+      .{
+        .binding = 1,
+        .imageView = outputColorImageView,
+      },
+    );
+  }
+
   var outputColorImageTape = (
     mtr.memory.ImageTape { .image = outputColorImage, }
+  );
+
+  var visibilitySurfaceImageTape = (
+    mtr.memory.ImageTape { .image = visibilitySurfaceImage, }
   );
 
   var intermediaryBufferTape = (
@@ -466,6 +580,9 @@ test "pipeline - simple triangle" {
       }
     );
 
+
+    // -- fragment
+
     commandBufferRecorder.append(
       mtr.command.PipelineBarrier {
         .srcStage = .{ .compute = true },
@@ -480,10 +597,10 @@ test "pipeline - simple triangle" {
         ),
         .imageTapes = (
           &[_] mtr.command.PipelineBarrier.ImageTapeAction {
-            mtr.command.PipelineBarrier.ImageTapeAction {
-              .tape = &outputColorImageTape,
+            .{
+              .tape = &visibilitySurfaceImageTape,
               .layout = .general,
-              .accessFlags = .{ .shaderWrite = true, },
+              .accessFlags = .{ .shaderWrite = true, .shaderRead = true, },
             },
           }
         ),
@@ -501,6 +618,49 @@ test "pipeline - simple triangle" {
         .pipelineLayout = fragmentPipelineLayout,
         .descriptorSets = (
           &[_] mtr.descriptor.LayoutIdx { descriptorSetFragmentPerFrame }
+        ),
+      },
+    );
+
+    commandBufferRecorder.append(
+      mtr.command.Dispatch {
+        .width = 512/16, .height = 512/8, .depth = 1,
+      }
+    );
+
+    // -- postproc
+
+    commandBufferRecorder.append(
+      mtr.command.PipelineBarrier {
+        .srcStage = .{ .compute = true },
+        .dstStage = .{ .compute = true },
+        .imageTapes = (
+          &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+            .{
+              .tape = &visibilitySurfaceImageTape,
+              .layout = .general,
+              .accessFlags = .{ .shaderRead = true, },
+            }, .{
+              .tape = &outputColorImageTape,
+              .layout = .general,
+              .accessFlags = .{ .shaderWrite = true, },
+            }
+          }
+        ),
+      },
+    );
+
+    commandBufferRecorder.append(
+      mtr.command.BindPipeline {
+        .pipeline = computePostprocPipeline,
+      }
+    );
+
+    commandBufferRecorder.append(
+      mtr.command.BindDescriptorSets {
+        .pipelineLayout = postprocPipelineLayout,
+        .descriptorSets = (
+          &[_] mtr.descriptor.LayoutIdx { descriptorSetPostprocPerFrame }
         ),
       },
     );

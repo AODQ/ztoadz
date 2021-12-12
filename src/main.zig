@@ -30,7 +30,7 @@ pub fn main() !void {
   }
 
   util.StringArena.arenaAllocator =
-    std.heap.ArenaAllocator.init(&debugAllocator.allocator)
+    std.heap.ArenaAllocator.init(debugAllocator.allocator())
   ;
 
   // -- initialize glfw / vulkan context

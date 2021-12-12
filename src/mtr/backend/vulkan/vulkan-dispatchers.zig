@@ -26,6 +26,10 @@ pub const VulkanInstanceDispatch = vk.InstanceWrapper(&.{
 pub const VulkanDeviceDispatch = vk.DeviceWrapper(&.{
   .allocateCommandBuffers,
   .allocateDescriptorSets ,
+  .createSwapchainKHR,
+  .destroySwapchainKHR,
+  .getSwapchainImagesKHR,
+  .acquireNextImageKHR,
   .allocateMemory,
   .beginCommandBuffer,
   .bindBufferMemory,
