@@ -23,7 +23,7 @@ layout (set = 0, binding = 2) buffer TriangleVertexAssemblyMetadata {
 mat4 LookAt(vec3 eye, vec3 center, vec3 up) {
   vec3 f = normalize(center - eye);
   vec3 s = normalize(cross(up, f));
-  vec3 u = cross(f, s);
+  vec3 u = normalize(cross(f, s));
 
   mat4 result = mat4(1.0f);
   result[0][0] = s.x;
@@ -42,26 +42,12 @@ mat4 LookAt(vec3 eye, vec3 center, vec3 up) {
 }
 
 mat4 defaultPerspective() {
-  const float tanHalfFov = tan(radians(75.0f) / 2.0f);
-  const float ar = 1.0f;
-
-  /* float near = 0.0f, far = 100.0f; */
-  /* mat4 m = mat4( */
-  /*   tanHalfFov/ar, 0.0f, 0.0f, 0.0f, */
-  /*   0.0f, tanHalfFov, 0.0f, 0.0f, */
-  /*   0.0f, 0.0f, 0.0f, -1.0f, */
-  /*   0.0f, 0.0f, 0.0f, 0.0f */
-  /* ); */
-
-  float zFar = 1000.0f;
-  float zNear = 0.00f;
-  mat4 result = mat4(0.0f);
-  result[0][0] = 1.0f / (ar * tanHalfFov);
-  result[1][1] = 1.0f / (tanHalfFov);
-  result[2][2] = zFar / (zFar - zNear);
-  result[2][3] = 1.0f;
-  result[3][2] = -(zFar * zNear) / (zFar - zNear);
-  return result;
+  return mat4(
+    0.5f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.5f, 0.0f, 0.0f,
+    0.0f, 0.0f, 1.0f, 0.0f,
+    0.0f, 0.0f, 0.5f, 1.0f
+  );
 }
 
 vec4 mtEntry(const uint inputId) {
@@ -69,14 +55,16 @@ vec4 mtEntry(const uint inputId) {
   // hardcode matrix
   const mat4 view = (
     LookAt(
-      vec3(0.0f, 0.0f, 5.0f),
-      vec3(0.0f, 0.0f, 0.0f),
+      vec3(0.0f, 1.0f, 1.0f),
+      vec3(0.0f, 0.5f, 0.0f),
       vec3(0.0f, -1.0f, 0.0)
     )
   );
   const mat4 proj = defaultPerspective();
 
-  return (proj*view)*origin;
+  vec4 o = (proj*view)*origin;
+  /* vec4 o = (view)*origin; */
+  return o;
 }
 
 uvec4 toSrgb(const vec4 inp) {

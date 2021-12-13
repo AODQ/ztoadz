@@ -300,19 +300,24 @@ pub fn DumbSceneLoad(
   const file = try std.fs.cwd().openFile(filename, .{ .read = true });
   defer file.close();
 
-  var lineBuffer : [4096] u8 = undefined;
+
+  var lineBuffer = [4*3] u8 { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, };
   while (true) {
-    var lineBufferSlice =
-      try file.reader().readUntilDelimiterOrEof(lineBuffer[0..], '\n');
+    const bytes = try file.readAll(lineBuffer[0..]);
 
-    if (lineBufferSlice == null) { break; }
+    if (bytes == 0) break;
 
-    if (lineBufferSlice.?[0] == '#') continue;
+    std.debug.assert(bytes == 12);
 
-    var splitIter = std.mem.split(u8, lineBufferSlice.?, "|");
-    while (splitIter.next()) |v| {
-      (try vertices.addOne()).* = try std.fmt.parseFloat(f32, v);
-    }
+    (try vertices.addOne()).* = (
+      @ptrCast(* f32, @alignCast(4, &lineBuffer[0])).*
+    );
+    (try vertices.addOne()).* = (
+      @ptrCast(* f32, @alignCast(4, &lineBuffer[4])).*
+    );
+    (try vertices.addOne()).* = (
+      @ptrCast(* f32, @alignCast(4, &lineBuffer[8])).*
+    );
     (try vertices.addOne()).* = 1.0;
   }
   return vertices;

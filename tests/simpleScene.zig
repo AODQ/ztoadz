@@ -10,8 +10,8 @@ fn compareValues(failStr : anytype, actual : u8, expected : u8,) void {
   }
 }
 
-const imageWidth = 256;
-const imageHeight = 256;
+const imageWidth = 1024;
+const imageHeight = 1024;
 
 test "pipeline - simple scene" {
   // rasterizes a simple scene
@@ -30,6 +30,8 @@ test "pipeline - simple scene" {
     if (leaked) std.log.info("{s}", .{"leaked memory"});
   }
 
+  var timer = try std.time.Timer.start();
+
   var mtrCtx = (
     mtr.Context.init(
       debugAllocator.allocator(),
@@ -37,6 +39,10 @@ test "pipeline - simple scene" {
     )
   );
   defer mtrCtx.deinit();
+
+  std.log.info("created context: {} ms", .{timer.read()/std.time.ns_per_ms});
+
+  timer.reset();
 
   const queue : mtr.queue.Idx = (
     try mtrCtx.constructQueue(.{
@@ -189,7 +195,7 @@ test "pipeline - simple scene" {
 
     var scene = try modelio.loader.DumbSceneLoad(
       debugAllocator.allocator(),
-      "models/cube.mtr"
+      "models/bunny.mtr"
     );
     errdefer scene.deinit();
     defer scene.deinit();
@@ -654,10 +660,18 @@ test "pipeline - simple scene" {
     );
   }
 
-  var timer = try std.time.Timer.start();
-  std.log.info("submit + flush", .{});
+  std.log.info("created pipeline: {} ms", .{timer.read()/std.time.ns_per_ms});
+  timer.reset();
+
   mtrCtx.submitCommandBufferToQueue(queue, commandBufferScratch);
   mtrCtx.queueFlush(queue);
+
+  std.log.info(
+    "rendered image, time: {} us",
+    .{timer.read()/std.time.ns_per_us}
+  );
+
+  timer.reset();
 
   try mtr.util.screenshot.storeImageToFile(
     &mtrCtx, .{
@@ -669,8 +683,9 @@ test "pipeline - simple scene" {
       .filename = "simple-triangle.ppm",
     }
   );
+
   std.log.info(
-    "done storing image, time: {} ms",
-    .{timer.read()/std.time.ns_per_ms}
+    "saved image, time: {} ms",
+     .{timer.read()/std.time.ns_per_ms}
   );
 }

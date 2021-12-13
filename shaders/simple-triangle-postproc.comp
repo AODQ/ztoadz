@@ -10,6 +10,20 @@ layout (set = 0, binding = 0, r64ui)
 layout (set = 0, binding = 1, rgba8ui)
   uniform writeonly uimage2D outputColorImage;
 
+uint murmurHash11(uint src) {
+    const uint M = 0x5bd1e995u;
+    uint h = 1190494759u;
+    src *= M; src ^= src>>24u; src *= M;
+    h *= M; h ^= src;
+    h ^= h>>13u; h *= M; h ^= h>>15u;
+    return h;
+}
+
+float hash11(uint src) {
+  uint h = murmurHash11(src);
+  return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
+}
+
 vec4 mtEntry(const vec2 uv, const ivec2 dispatchId) {
   uint64_t surface = imageLoad(visibilitySurfaceImage, dispatchId.xy).x;
   uint32_t triangleIdU32 = uint32_t(surface & 0xFFFFFFFF);
@@ -17,9 +31,9 @@ vec4 mtEntry(const vec2 uv, const ivec2 dispatchId) {
   float depth = uintBitsToFloat(depthU32);
   if (surface > 0) {
     return vec4(
-      depth,
-      depth,
-      fract(sin(83.21*triangleIdU32)*812.32f),
+      hash11(triangleIdU32),
+      hash11(232+triangleIdU32),
+      hash11(3729+triangleIdU32),
       1.0f
     );
   }
