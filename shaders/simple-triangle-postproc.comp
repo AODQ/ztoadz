@@ -10,6 +10,10 @@ layout (set = 0, binding = 0, r64ui)
 layout (set = 0, binding = 1, rgba8ui)
   uniform writeonly uimage2D outputColorImage;
 
+layout (set = 0, binding = 2) buffer TriangleIntermediaryAssembly {
+  vec4 outputOrigins[];
+};
+
 uint murmurHash11(uint src) {
     const uint M = 0x5bd1e995u;
     uint h = 1190494759u;
@@ -24,30 +28,126 @@ float hash11(uint src) {
   return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
-vec4 mtEntry(const vec2 uv, const ivec2 dispatchId) {
+mat4 LookAt(vec3 eye, vec3 center, vec3 up) {
+  vec3 f = normalize(center - eye);
+  vec3 s = normalize(cross(up, f));
+  vec3 u = normalize(cross(f, s));
+
+  mat4 result = mat4(1.0f);
+  result[0][0] = s.x;
+  result[1][0] = s.y;
+  result[2][0] = s.z;
+  result[0][1] = u.x;
+  result[1][1] = u.y;
+  result[2][1] = u.z;
+  result[0][2] = f.x;
+  result[1][2] = f.y;
+  result[2][2] = f.z;
+  result[3][0] = -dot(s, eye);
+  result[3][1] = -dot(u, eye);
+  result[3][2] = -dot(f, eye);
+  return result;
+}
+
+mat4 defaultPerspective() {
+  return mat4(
+    0.5f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.5f, 0.0f, 0.0f,
+    0.0f, 0.0f, 1.0f, 0.0f,
+    0.0f, 0.0f, 0.5f, 1.0f
+  );
+}
+
+vec4 mtEntry(const vec2 uv, const ivec2 dispatchId, const ivec2 viewportDim) {
   uint64_t surface = imageLoad(visibilitySurfaceImage, dispatchId.xy).x;
-  uint32_t triangleIdU32 = uint32_t(surface & 0xFFFFFFFF);
   uint32_t depthU32 = uint32_t((surface >> 32) & 0xFFFFFFFF);
   float depth = uintBitsToFloat(depthU32);
-  if (surface > 0) {
-    return vec4(
-      hash11(triangleIdU32),
-      hash11(232+triangleIdU32),
-      hash11(3729+triangleIdU32),
-      1.0f
-    );
-  }
-  return vec4(0.0f);
+  if (surface == 0) return vec4(0.0f);
+  uint32_t triangleIdU32 = uint32_t(surface & 0xFFFFFFFF);
+
+  /* // gets random triangle ID */
+  /* if (surface > 0) { */
+  /*   return vec4( */
+  /*     hash11(triangleIdU32), */
+  /*     hash11(232+triangleIdU32), */
+  /*     hash11(3729+triangleIdU32), */
+  /*     1.0f */
+  /*   ); */
+  /* } */
+
+  vec4 t0 = outputOrigins[triangleIdU32*6 + 0];
+  vec4 t1 = outputOrigins[triangleIdU32*6 + 1];
+  vec4 t2 = outputOrigins[triangleIdU32*6 + 2];
+
+  vec4 uv0 = outputOrigins[triangleIdU32*6 + 3];
+  vec4 uv1 = outputOrigins[triangleIdU32*6 + 4];
+  vec4 uv2 = outputOrigins[triangleIdU32*6 + 5];
+
+  // get the clip space
+  const mat4 view = (
+    LookAt(
+      vec3(0.0f, 0.0f, 2.0f),
+      vec3(0.0f),
+      vec3(0.0f, -1.0f, 0.0)
+    )
+  );
+  const mat4 proj = defaultPerspective();
+  const mat4 viewInv = inverse(view);
+  const mat4 projInv = inverse(proj);
+
+
+  // reconstruct world space origin
+  vec4 worldSpaceOrigin = vec4(uv, depth, 1.0f);
+  worldSpaceOrigin = viewInv * worldSpaceOrigin;
+  worldSpaceOrigin = projInv * worldSpaceOrigin;
+  worldSpaceOrigin /= worldSpaceOrigin.w;
+
+  #define toScreen(v) v.xy = (viewportDim * v.xy);
+
+  toScreen(t0);
+  toScreen(t1);
+  toScreen(t2);
+
+  #undef toScreen
+
+  // from world space origin, reconstruct barycentric UV coords
+  const mat3 tris = (
+    inverse(mat3(t0.xyz, t1.xyz, t2.xyz))
+  );
+  vec3 uvw = vec3(uv, 1.0f);
+
+  // correct for screen space & center pixel
+  uvw.xy = (
+    mix(
+      vec2(-viewportDim/2.0f-vec2(1.0f)),
+      vec2(+viewportDim/2.0f+vec2(1.0f)),
+      uvw.xy
+    )
+  );
+  uvw.xy += vec2(0.5f);
+
+  vec3 bcScreen = tris * uvw;
+  bcScreen /= dot(bcScreen, vec3(1.0f));
+
+  // apply barycentric coords to clip space to apply perspective projection
+  vec3 bcClip = bcScreen / vec3(t0.w, t1.w, t2.w);
+
+  mat2x3 varyingUv = mat2x3(uv0.xy, uv1.xy, uv2.xy);
+
+  vec2 triUv = bcClip * varyingUv;
+
+  return vec4(triUv, 0.0f, 1.0f);
+
 }
 
 uvec4 toSrgb(const vec4 inp) {
-  return uvec4(inp * vec4(255.0f));
+  return uvec4(clamp(inp * vec4(255.0f), 0.0f, 255.0f));
 }
 
 void main() {
-  const ivec2 imageColorDim = imageSize(outputColorImage);
+  const ivec2 viewportDim = imageSize(outputColorImage);
   const ivec3 dispatchId = ivec3(gl_GlobalInvocationID.xyz);
-  const vec2 uvcoord = vec2(dispatchId.xy) / vec2(imageColorDim);
+  const vec2 uvcoord = vec2(dispatchId.xy) / vec2(viewportDim);
 
   if (uvcoord.x > 1.0f || uvcoord.y > 1.0f) {
     return;
@@ -56,6 +156,6 @@ void main() {
   imageStore(
     outputColorImage,
     dispatchId.xy,
-    toSrgb(mtEntry(uvcoord, dispatchId.xy))
+    toSrgb(mtEntry(uvcoord, dispatchId.xy, viewportDim.xy))
   );
 }

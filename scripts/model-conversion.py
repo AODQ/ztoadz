@@ -6,7 +6,6 @@ import sys
 import struct
 from pathlib import Path
 
-
 class Scene:
   def __init__(s):
     s.origins = [] # vec3
@@ -38,47 +37,58 @@ def sliding_window(iterable, n):
       window.append(x)
       yield tuple(window)
 
-def convertObj(inputFile):
-  scene = Scene();
-
-  with open(inputFile) as file:
-    total = len(file.readlines())
-  print(f"total: {total}")
-
-  with open(inputFile) as file:
-    for index, line in enumerate(file.readlines()):
-      line = line.rstrip().split()
-
-      if not line:
-        continue
-
-      if (index % 10000 == 0):
-        print(f"{index}/{total} :: {len(scene.elements)} :: {len(scene.origins)}")
-
-      name, *args = line
-      if (name == 'f'):
-        elems = (int(f.split('/',1)[0]) - 1 for f in args)
-        it = 0
-        for e in sliding_window(elems, 3):
-          it += 1
-          if (it % 2 == 0):
-            e = (e[0], e[2], e[1])
-          scene.elements.extend(e)
-      elif (name == 'v'):
-        scene.origins.extend(float(v) for v in args)
-
-  return scene
-
-def convert(inputFile, upConversion):
+def convert(inputFile, outputFile, upConversion, normalize):
   basename, ext = os.path.splitext(inputFile)
 
-  scene = Scene();
-  if (ext == ".obj"):
-    scene = convertObj(inputFile)
+  #scene = Scene();
 
-  # TODO apply up conversion
+  print("importing scene");
+  import pyassimp
+  scene = pyassimp.load(inputFile);
 
-  return scene
+  minbounds = [999999.0, 999999.0, 9999999.0]
+  maxbounds = [-999999.0, -999999.0, -9999999.0]
+
+  for mesh in scene.meshes:
+    for elements in zip(*([iter(mesh.faces)])):
+      assert len(elements) == 1
+      for element in elements[0]:
+        for i in range(0, 3):
+          minbounds[i] = min(mesh.vertices[element][i], minbounds[i])
+          maxbounds[i] = max(mesh.vertices[element][i], maxbounds[i])
+
+  lenbounds = [
+    maxbounds[0]-minbounds[0],
+    maxbounds[1]-minbounds[1],
+    maxbounds[2]-minbounds[2]
+  ];
+
+  print(
+    f"scene dimensions:\n\t   {minbounds}\n\t-> {maxbounds}\n\t== {lenbounds}"
+  )
+
+  file = open(outputFile, 'w+b')
+  print(f"scene: {scene}")
+  print("converting scene");
+  for mesh in scene.meshes:
+    for elements in zip(*([iter(mesh.faces)])):
+      assert len(elements) == 1
+      for element in elements[0]:
+        vtx = mesh.vertices[element];
+        if (normalize):
+          vtx[0] = vtx[0] + 0.5;
+          vtx[1] = vtx[1] + 0.5;
+          vtx[2] = vtx[2] + 0.5;
+          #for i in range(0, 3):
+          #  vtx[i] = vtx[i]*0.5;
+
+        file.write(struct.pack("fff", *vtx));
+        if (len(mesh.texturecoords) == 0):
+          file.write(struct.pack("fff", *(0.0, 0.0, 0.0)))
+        else:
+          file.write(struct.pack("fff", *mesh.texturecoords[0][element]));
+
+  file.close()
 
 def main(args):
   if (args.from_up is None) != (args.to_up is None):
@@ -105,21 +115,18 @@ def main(args):
   print(f"input: {inputFile} output: {outputFile}")
 
   # convert
-  result = convert(inputFile, (fromUp, toUp));
+  result = (
+    convert(inputFile, outputFile, (fromUp, toUp), args.normalize is not None)
+  );
 
-  print(f"conversion finished now writing {len(result.elements)}")
-
-  if (outputFile == "stdout"):
-    print(result)
-  else:
-    with open(outputFile, 'w+b') as file:
-      result.writeToFile(file);
+  print(f"conversion finished")
 
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.set_defaults(func=main)
   parser.add_argument('-i', '--input', metavar='input', default=None)
+  parser.add_argument('-n', '--normalize', action='store_true', default=None)
   parser.add_argument('-o', '--output', metavar='output', default=None)
   parser.add_argument('-fu', '--from-up', metavar='fup', default=None)
   parser.add_argument('-tu', '--to-up', metavar='tup', default=None)

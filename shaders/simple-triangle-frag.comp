@@ -28,9 +28,9 @@ TriangleInfo GatherTriangleInfo(
   const uint32_t triangleId,
   const ivec2 viewportDim
 ) {
-  vec4 v0 = inputOrigins[triangleId*3+0];
-  vec4 v1 = inputOrigins[triangleId*3+1];
-  vec4 v2 = inputOrigins[triangleId*3+2];
+  vec4 v0 = inputOrigins[triangleId*6+0];
+  vec4 v1 = inputOrigins[triangleId*6+1];
+  vec4 v2 = inputOrigins[triangleId*6+2];
 
   TriangleInfo triangle;
 
@@ -93,7 +93,7 @@ void main() {
   const ivec2 minBounds = (
     ivec2(
       max(
-        vec2(-viewportDim/2.0f-1.0f),
+        vec2(-viewportDim/2.0f-vec2(1.0f)),
         min(v0.xy, min(v1.xy, v2.xy))-vec2(0.5f)
       )
     )
@@ -102,7 +102,7 @@ void main() {
   const ivec2 maxBounds = (
     ivec2(
       min(
-        vec2(+viewportDim/2.0f+1.0f),
+        vec2(+viewportDim/2.0f+vec2(1.0f)),
         max(v0.xy, max(v1.xy, v2.xy))+vec2(0.5f)
       )
     )

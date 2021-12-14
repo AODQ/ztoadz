@@ -195,7 +195,7 @@ test "pipeline - simple scene" {
 
     var scene = try modelio.loader.DumbSceneLoad(
       debugAllocator.allocator(),
-      "models/bunny.mtr"
+      "models/lpshead/head.mtr"
     );
     errdefer scene.deinit();
     defer scene.deinit();
@@ -273,7 +273,7 @@ test "pipeline - simple scene" {
 
   mtrCtx.queueFlush(queue);
 
-  const numTriangles : u32 = @intCast(u32, origins.items.len/4/3);
+  const numTriangles : u32 = @intCast(u32, origins.items.len/8/3);
   std.log.info("num triangles: {}", .{numTriangles});
 
   try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
@@ -364,6 +364,10 @@ test "pipeline - simple scene" {
           mtr.descriptor.SetLayoutBinding{
             .descriptorType = .storageImage,
             .binding = 1,
+          },
+          mtr.descriptor.SetLayoutBinding{
+            .descriptorType = .storageBuffer,
+            .binding = 2,
           },
         })
       ),
@@ -509,6 +513,13 @@ test "pipeline - simple scene" {
       .{
         .binding = 1,
         .imageView = outputColorImageView,
+      },
+    );
+
+    try descriptorSetByFrameWriter.set(
+      .{
+        .binding = 2,
+        .buffer = inputTriangleVertexIntermediaryBuffer,
       },
     );
   }

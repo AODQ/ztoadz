@@ -55,8 +55,8 @@ vec4 mtEntry(const uint inputId) {
   // hardcode matrix
   const mat4 view = (
     LookAt(
-      vec3(0.0f, 1.0f, 1.0f),
-      vec3(0.0f, 0.5f, 0.0f),
+      vec3(0.0f, 0.0f, 2.0f),
+      vec3(0.0f),
       vec3(0.0f, -1.0f, 0.0)
     )
   );
@@ -72,10 +72,17 @@ uvec4 toSrgb(const vec4 inp) {
 }
 
 void main() {
-  const uint it = gl_GlobalInvocationID.x;
-  if (it.x >= numTriangles) return;
+  const uint triangleId = gl_GlobalInvocationID.x;
+  if (triangleId.x >= numTriangles) return;
 
-  outputOrigins[it*3+0] = mtEntry(it*3+0);
-  outputOrigins[it*3+1] = mtEntry(it*3+1);
-  outputOrigins[it*3+2] = mtEntry(it*3+2);
+
+  // de-interleave the vertices
+
+  outputOrigins[triangleId*6+0] = mtEntry(triangleId*6+0);
+  outputOrigins[triangleId*6+1] = mtEntry(triangleId*6+2);
+  outputOrigins[triangleId*6+2] = mtEntry(triangleId*6+4);
+
+  outputOrigins[triangleId*6+3] = inputVertexAttributes[triangleId*6+1];
+  outputOrigins[triangleId*6+4] = inputVertexAttributes[triangleId*6+3];
+  outputOrigins[triangleId*6+5] = inputVertexAttributes[triangleId*6+5];
 }
