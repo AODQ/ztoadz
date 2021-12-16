@@ -97,16 +97,15 @@ pub fn storeImageToFile(
     });
 
     // TODO for now only support RGBA u8
-    var rgbaMemory = @ptrCast([*] u8, @alignCast(1, mappedMemory.ptr));
+    var rgbaMemory = @ptrCast([*] const u8, @alignCast(1, mappedMemory.ptr));
 
     const file = try std.fs.cwd().createFile(params.filename, .{ });
     defer file.close();
-    var rgbaIt : usize = 0;
     try std.fmt.format(
-      file.writer(), "P6\n{} {}\n{}\n", .{mtImage.width, mtImage.height, 255}
+      file.writer(),
+      "P7\nWIDTH {}\nHEIGHT {}\nMAXVAL {}\nTUPLTYPE RGB_ALPHA\nENDHDR\n",
+      .{mtImage.width, mtImage.height, 255}
     );
-    while (rgbaIt < mtImage.getImageByteLength()) : (rgbaIt += 4) {
-      _ = try file.write(rgbaMemory[rgbaIt..rgbaIt+3]);
-    }
+    _ = try file.write(rgbaMemory[0..mtImage.getImageByteLength()]);
   }
 }

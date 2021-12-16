@@ -1,4 +1,4 @@
-const vk = @import("../../../../bindings/vulkan.zig");
+const vk = @import("../../../bindings/vulkan.zig");
 
 pub const VulkanBaseDispatch = vk.BaseWrapper(&.{
   .createInstance,

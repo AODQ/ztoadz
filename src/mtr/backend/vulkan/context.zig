@@ -4,7 +4,7 @@ const std = @import("std");
 const glfw = @import("glfw.zig");
 const vkDispatcher = @import("vulkan-dispatchers.zig");
 const vkSwapchain = @import("swapchain.zig");
-const vk = @import("../../../../bindings/vulkan.zig");
+const vk = @import("../../../bindings/vulkan.zig");
 
 fn zeroInitInPlace(ptr : anytype) void {
   ptr.* = std.mem.zeroInit(std.meta.Child(@TypeOf(ptr)), .{});
@@ -442,6 +442,10 @@ pub const VulkanDeviceContext = struct {
               .shaderInt64 = vk.TRUE,
               .shaderInt16 = vk.TRUE,
             }
+          },
+          vk.PhysicalDevice8BitStorageFeatures {
+            .storageBuffer8BitAccess = vk.TRUE,
+            .uniformAndStorageBuffer8BitAccess = vk.TRUE,
           },
           vk.PhysicalDeviceShaderImageAtomicInt64FeaturesEXT {
             .shaderImageInt64Atomics = vk.TRUE,
@@ -1567,8 +1571,57 @@ pub const Rasterizer = struct {
           },
         );
       },
+      .transferBufferToImage => |action| {
+        var vkImageDst = self.images.getPtr(action.imageDst).?;
+        var vkBufferSrc = self.buffers.get(action.bufferSrc).?;
+
+        const subresourceRange = (
+          vk.ImageSubresourceRange {
+            .aspectMask = .{ .colorBit = true },
+            .baseMipLevel = action.mipmapLayerBegin,
+            .levelCount = action.mipmapLayerCount,
+            .baseArrayLayer = action.arrayLayerBegin,
+            .layerCount = action.arrayLayerCount,
+          }
+        );
+
+        const imageExtent = vk.Extent3D {
+          .width = action.width, .height = action.height, .depth = action.depth,
+        };
+
+        const imageOffset = vk.Offset3D {
+          .x = @intCast(i32, action.xOffset),
+          .y = @intCast(i32, action.yOffset),
+          .z = @intCast(i32, action.zOffset),
+        };
+
+        self.vkd.vkdd.cmdCopyBufferToImage2KHR(
+          vkCommandBuffer,
+          vk.CopyBufferToImageInfo2KHR {
+            .srcBuffer = vkBufferSrc,
+            .dstImage = vkImageDst,
+            .dstImageLayout = vk.ImageLayout.transferDstOptimal,
+            .regionCount = 1,
+            .pRegions = @ptrCast(
+              [*] const vk.BufferImageCopy2KHR,
+              &vk.BufferImageCopy2KHR {
+                .bufferOffset = 0,
+                .bufferRowLength = 0, // tightly packed
+                .bufferImageHeight = 0, // tightly packed
+                .imageSubresource = vk.ImageSubresourceLayers {
+                  .aspectMask = subresourceRange.aspectMask,
+                  .mipLevel = subresourceRange.baseMipLevel,
+                  .baseArrayLayer = subresourceRange.baseArrayLayer,
+                  .layerCount = subresourceRange.layerCount,
+                },
+                .imageOffset = imageOffset,
+                .imageExtent = imageExtent,
+              },
+            ),
+          },
+        );
+      },
       .transferImageToBuffer => |action| {
-        // var srcImage = context.images.getPtr(action.imageSrc).?;
         var vkImageSrc = self.images.getPtr(action.imageSrc).?;
         var vkBufferDst = self.buffers.get(action.bufferDst).?;
 

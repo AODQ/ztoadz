@@ -1,0 +1,15 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/model-converter
+model-converter.so
+model-converter.dylib
+model-converter.dll
+model-converter.a
+model-converter.lib
+model-converter-test-*
+*.exe
+*.o
+*.obj
+*.lst

@@ -13,6 +13,9 @@ layout (set = 0, binding = 1) buffer TriangleIntermediaryAssembly {
 
 layout (set = 0, binding = 2) buffer TriangleVertexAssemblyMetadata {
   uint32_t numTriangles;
+  float cameraOriginX;
+  float cameraOriginY;
+  float cameraOriginZ;
 };
 
 /* layout (set = 0, binding = 3) buffer Camera { */
@@ -55,7 +58,7 @@ vec4 mtEntry(const uint inputId) {
   // hardcode matrix
   const mat4 view = (
     LookAt(
-      vec3(0.0f, 0.0f, 2.0f),
+      vec3(cameraOriginX, cameraOriginY, cameraOriginZ),
       vec3(0.0f),
       vec3(0.0f, -1.0f, 0.0)
     )
@@ -76,7 +79,8 @@ void main() {
   if (triangleId.x >= numTriangles) return;
 
 
-  // de-interleave the vertices
+  // de-interleave the triangles
+  // [vtx0, uv0, vtx1, ...]
 
   outputOrigins[triangleId*6+0] = mtEntry(triangleId*6+0);
   outputOrigins[triangleId*6+1] = mtEntry(triangleId*6+2);

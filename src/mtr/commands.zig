@@ -7,6 +7,7 @@ pub const BufferIdx = u64;
 pub const ActionType = enum {
   pipelineBarrier,
   transferImageToBuffer,
+  transferBufferToImage,
   transferMemory,
   uploadTexelToImageMemory,
   bindPipeline,
@@ -73,6 +74,18 @@ pub const TransferImage = struct {
   layers : u64, mipmaps : u64
 };
 
+pub const TransferBufferToImage = struct {
+  actionType : mtr.command.ActionType = .TransferBufferToImage,
+  bufferSrc : mtr.buffer.Idx,
+  imageDst : mtr.image.Idx,
+  xOffset : u32 = 0, yOffset : u32 = 0, zOffset : u32 = 0,
+  width : u32, height : u32, depth : u32,
+  mipmapLayerBegin : u32 = 0,
+  mipmapLayerCount : u32 = 1, // if 0 assume all
+  arrayLayerBegin : u32 = 0,
+  arrayLayerCount : u32 = 1, // if 0 assume all
+};
+
 pub const imageRangeEnd : i64 = -1;
 
 // uploads a single texel to image memory, copying it to the entire specified
@@ -110,6 +123,7 @@ pub const BindDescriptorSets = struct {
 pub const Action = union(ActionType) {
   transferMemory : mtr.command.TransferMemory,
   transferImageToBuffer : mtr.command.TransferImageToBuffer,
+  transferBufferToImage : mtr.command.TransferBufferToImage,
   pipelineBarrier : mtr.command.PipelineBarrier,
   uploadTexelToImageMemory : mtr.command.UploadTexelToImageMemory,
   bindPipeline : mtr.command.BindPipeline,

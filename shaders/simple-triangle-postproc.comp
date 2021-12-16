@@ -14,6 +14,21 @@ layout (set = 0, binding = 2) buffer TriangleIntermediaryAssembly {
   vec4 outputOrigins[];
 };
 
+layout (set = 0, binding = 3) buffer TriangleVertexAssemblyMetadata {
+  uint32_t numTriangles;
+  float cameraOriginX;
+  float cameraOriginY;
+  float cameraOriginZ;
+};
+
+layout (set = 0, binding = 4, rgba8ui)
+  uniform readonly uimage2D inputDiffuseImage;
+
+vec4 texelRead(vec2 uv) {
+  ivec2 tuv = clamp(ivec2(uv * vec2(1024)), ivec2(0), ivec2(1024));
+  return vec4(imageLoad(inputDiffuseImage, tuv))/vec4(255.0f);
+}
+
 uint murmurHash11(uint src) {
     const uint M = 0x5bd1e995u;
     uint h = 1190494759u;
@@ -86,7 +101,7 @@ vec4 mtEntry(const vec2 uv, const ivec2 dispatchId, const ivec2 viewportDim) {
   // get the clip space
   const mat4 view = (
     LookAt(
-      vec3(0.0f, 0.0f, 2.0f),
+      vec3(cameraOriginX, cameraOriginY, cameraOriginZ),
       vec3(0.0f),
       vec3(0.0f, -1.0f, 0.0)
     )
@@ -131,13 +146,13 @@ vec4 mtEntry(const vec2 uv, const ivec2 dispatchId, const ivec2 viewportDim) {
 
   // apply barycentric coords to clip space to apply perspective projection
   vec3 bcClip = bcScreen / vec3(t0.w, t1.w, t2.w);
+  bcClip /= dot(bcClip, vec3(1.0f));
 
-  mat2x3 varyingUv = mat2x3(uv0.xy, uv1.xy, uv2.xy);
+  /* mat2x3 varyingUv = mat2x3(uv0.xy, uv1.xy, uv2.xy); */
+  /* vec2 triUv = bcClip * varyingUv; */
+  vec2 triUv = bcClip.x * uv0.xy + bcClip.y * uv1.xy + bcClip.z * uv2.xy;
 
-  vec2 triUv = bcClip * varyingUv;
-
-  return vec4(triUv, 0.0f, 1.0f);
-
+  return texelRead(triUv);
 }
 
 uvec4 toSrgb(const vec4 inp) {

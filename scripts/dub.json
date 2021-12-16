@@ -1,0 +1,13 @@
+{
+	"authors": [
+		"toad"
+	],
+	"copyright": "Copyright © 2021, toad",
+	"dependencies": {
+		"argparse": "~>0.5.0"
+	},
+	"description": "mtr model conversion",
+	"license": "proprietary",
+	"name": "model-converter",
+  "libs": ["assimp"]
+}

@@ -195,7 +195,8 @@ test "pipeline - simple scene" {
 
     var scene = try modelio.loader.DumbSceneLoad(
       debugAllocator.allocator(),
-      "models/lpshead/head.mtr"
+      "models/hairball.mtr"
+      //"models/lpshead/head.mtr"
     );
     errdefer scene.deinit();
     defer scene.deinit();

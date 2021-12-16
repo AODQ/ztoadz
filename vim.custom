@@ -1,10 +1,10 @@
 function! MakeprgRelease()
-  let &makeprg = 'zig build test'
+  let &makeprg = 'zig build'
   make
 endfunction
 
 function! MakeprgVulkan()
-  let &makeprg = 'zig build test'
+  let &makeprg = 'zig build'
   make
 endfunction
 

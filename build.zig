@@ -26,45 +26,56 @@ fn addShader(
 
 pub fn build(builder: * std.build.Builder) !void {
 
-
   // add test step
-  var testStep = builder.step("test", "Run all the tests");
-  var tester = builder.addTest("tests/package.zig");
-  tester.linkSystemLibrary("c");
-  tester.linkSystemLibrary("glfw");
-  tester.linkSystemLibrary("vulkan");
-  tester.setMainPkgPath(".");
+  // var testStep = builder.step("test", "Run all the tests");
+  // var tester = builder.addTest("tests/package.zig");
+  // tester.setBuildMode(.ReleaseFast);
+  // tester.linkSystemLibrary("c");
+  // tester.linkSystemLibrary("glfw");
+  // tester.linkSystemLibrary("vulkan");
+  // tester.setMainPkgPath(".");
 
-  testStep.dependOn(&tester.step);
+  // testStep.dependOn(&tester.step);
+
+  // try addShader(
+  //   builder, tester,
+  //   "simple-triangle-vert.comp", "simple-triangle-vert.spv"
+  // );
+
+  // try addShader(
+  //   builder, tester,
+  //   "simple-triangle-frag.comp", "simple-triangle-frag.spv"
+  // );
+
+  // try addShader(
+  //   builder, tester,
+  //   "simple-triangle-postproc.comp", "simple-triangle-postproc.spv"
+  // );
+
+  // const mode = builder.standardReleaseOptions();
+  const exe = builder.addExecutable("ztoadz", "src/main.zig");
+  exe.setBuildMode(.Debug);
 
   try addShader(
-    builder, tester,
+    builder, exe,
     "simple-triangle-vert.comp", "simple-triangle-vert.spv"
   );
 
   try addShader(
-    builder, tester,
+    builder, exe,
     "simple-triangle-frag.comp", "simple-triangle-frag.spv"
   );
 
   try addShader(
-    builder, tester,
+    builder, exe,
     "simple-triangle-postproc.comp", "simple-triangle-postproc.spv"
   );
 
-  // const mode = builder.standardReleaseOptions();
-  // const exe = builder.addExecutable("ztoadz", "src/main.zig");
+  exe.linkSystemLibrary("c");
 
-  // builder.addSystemCommand(
-  //   &[_] [] u8 { &[_] u8 { "cd shaders/" }, "./recompile-shaders.sh" }
-  // );
-  // exe.setBuildMode(mode);
+  exe.linkSystemLibrary("glfw");
+  exe.linkSystemLibrary("vulkan");
 
-  // exe.linkSystemLibrary("c");
-
-  // exe.linkSystemLibrary("glfw");
-  // exe.linkSystemLibrary("vulkan");
-
-  // builder.default_step.dependOn(&exe.step);
-  // exe.install();
+  builder.default_step.dependOn(&exe.step);
+  exe.install();
 }

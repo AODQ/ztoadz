@@ -16,7 +16,7 @@ test "pipeline - simple graph" {
     @embedFile("../shaders/simple-graph-line.spv")
   );
 
-  std.testing.log_level = .debug;
+  std.testing.log_level = .release;
 
   var debugAllocator =
     std.heap.GeneralPurposeAllocator(

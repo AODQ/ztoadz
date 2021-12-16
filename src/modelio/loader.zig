@@ -300,7 +300,6 @@ pub fn DumbSceneLoad(
   const file = try std.fs.cwd().openFile(filename, .{ .read = true });
   defer file.close();
 
-
   var lineBuffer = [4*3] u8 { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, };
   while (true) {
     const bytes = try file.readAll(lineBuffer[0..]);

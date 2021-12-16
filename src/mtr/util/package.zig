@@ -224,6 +224,86 @@ pub const CommandBufferRecorder = struct {
   }
 };
 
+pub const StageMemoryToImageParams = struct {
+  queue : mtr.queue.Idx,
+  commandBuffer : mtr.command.BufferIdx,
+  imageDst : mtr.buffer.Idx,
+  imageTape : * mtr.memory.ImageTape,
+  memoryToUpload : [] const u8,
+};
+
+pub fn stageMemoryToImage(
+  mtrCtx : * mtr.Context,
+  params : StageMemoryToImageParams,
+) !void {
+  var stagingBuffer : mtr.buffer.Idx = 0;
+  var heapRegion : mtr.heap.RegionIdx = 0;
+  // defer mtrCtx.destroyBuffer(stagingBuffer);
+  // defer mtrCtx.destroyHeapRegion(heapRegion);
+  { // -- create staging buffer
+    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.hostWritable);
+    defer heapRegion = heapRegionAllocator.finish();
+
+    stagingBuffer = try (
+      heapRegionAllocator.createBuffer(.{
+        .offset = 0,
+        .length = @sizeOf(u8)*params.memoryToUpload.len,
+        .usage = mtr.buffer.Usage{ .transferSrc = true },
+        .queueSharing = mtr.queue.SharingUsage.exclusive,
+      })
+    );
+  }
+
+  { // -- copy data
+    var mappedMemory = try mtrCtx.mapMemoryBuffer(.{
+      .mapping = mtr.util.MappingType.Write,
+      .buffer = stagingBuffer,
+      .offset = 0, .length = @sizeOf(u8)*params.memoryToUpload.len,
+    });
+    defer mtrCtx.unmapMemory(mappedMemory);
+
+    std.mem.copy(
+      u8,
+      mappedMemory.ptr[0..params.memoryToUpload.len],
+      params.memoryToUpload
+    );
+  }
+
+  {
+    var commandBufferRecorder = (
+      mtrCtx.createCommandBufferRecorder(params.commandBuffer)
+    );
+    defer commandBufferRecorder.finish();
+
+    commandBufferRecorder.append(
+      mtr.command.PipelineBarrier {
+        .srcStage = .{ .host = true },
+        .dstStage = .{ .compute = true },
+        .imageTapes = (
+          &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+            .{
+              .tape = params.imageTape,
+              .layout = .general,
+              .accessFlags = .{ .transferWrite = true, },
+            },
+          }
+        ),
+      },
+    );
+
+    commandBufferRecorder.append(
+      mtr.command.TransferBufferToImage(.{
+        .bufferSrc = stagingBuffer,
+        .imageDst = params.bufferDst,
+        .xOffset = 0, .yOffset = 0, .zOffset = 0,
+        .width = 1024, .height = 1024, .depth = 1,
+      })
+    );
+  }
+
+  mtrCtx.submitCommandBufferToQueue(params.queue, params.commandBuffer);
+}
+
 pub const StageMemoryToBufferParams = struct {
   queue : mtr.queue.Idx,
   commandBuffer : mtr.command.BufferIdx,

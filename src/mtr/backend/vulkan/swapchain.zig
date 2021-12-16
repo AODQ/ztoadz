@@ -3,7 +3,7 @@ const std = @import("std");
 
 const glfw = @import("glfw.zig");
 const vkDispatcher = @import("vulkan-dispatchers.zig");
-const vk = @import("../../../../bindings/vulkan.zig");
+const vk = @import("../../../bindings/vulkan.zig");
 const context = @import("context.zig");
 
 // TODO maybe at some point surface this thru MTR instead of hiding it,
