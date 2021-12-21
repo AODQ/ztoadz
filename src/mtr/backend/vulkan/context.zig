@@ -126,6 +126,7 @@ fn accessFlagsToVk(flags : mtr.memory.AccessFlags) vk.AccessFlags {
     .transferWriteBit = flags.transferWrite,
     .hostReadBit = flags.hostRead,
     .hostWriteBit = flags.hostWrite,
+    .indirectCommandReadBit = flags.indirectCommand,
   };
 }
 
@@ -234,6 +235,7 @@ fn bufferUsageToVk(usage : mtr.buffer.Usage) vk.BufferUsageFlags {
     .storageTexelBufferBit = false,
     .uniformBufferBit = usage.bufferUniform,
     .storageBufferBit = usage.bufferStorage,
+    .indirectBufferBit = usage.bufferIndirect,
   };
 }
 
@@ -450,6 +452,10 @@ pub const VulkanDeviceContext = struct {
           vk.PhysicalDeviceShaderImageAtomicInt64FeaturesEXT {
             .shaderImageInt64Atomics = vk.TRUE,
             .sparseImageInt64Atomics = vk.TRUE,
+          },
+          vk.PhysicalDeviceShaderAtomicInt64Features {
+            .shaderBufferInt64Atomics = vk.TRUE,
+            .shaderSharedInt64Atomics = vk.TRUE,
           },
         },
       )
@@ -1599,7 +1605,7 @@ pub const Rasterizer = struct {
           vkCommandBuffer,
           vk.CopyBufferToImageInfo2KHR {
             .srcBuffer = vkBufferSrc,
-            .dstImage = vkImageDst,
+            .dstImage = vkImageDst.handle,
             .dstImageLayout = vk.ImageLayout.transferDstOptimal,
             .regionCount = 1,
             .pRegions = @ptrCast(
@@ -1808,6 +1814,27 @@ pub const Rasterizer = struct {
           action.width, action.height, action.depth,
         );
       },
+      .dispatchIndirect => |action| {
+        const vkBuffer = self.buffers.get(action.buffer).?;
+        self.vkd.vkdd.cmdDispatchIndirect(
+          vkCommandBuffer,
+          vkBuffer,
+          @intCast(u32, action.offset),
+        );
+      },
+      .pushConstants => |action| {
+        const vkPipelineLayout = (
+          self.pipelineLayouts.get(action.pipelineLayout).?
+        );
+        self.vkd.vkdd.cmdPushConstants(
+          vkCommandBuffer,
+          vkPipelineLayout,
+          .{ .computeBit = true, },
+          0,
+          @intCast(u32, action.memory.len),
+          @ptrCast(* const c_void, action.memory.ptr),
+        );
+      },
     }
   }
 
@@ -2013,6 +2040,12 @@ pub const Rasterizer = struct {
       );
     }
 
+    var pushConstantRange = vk.PushConstantRange {
+      .stageFlags = .{ .computeBit = true },
+      .offset = 0,
+      .size = pipelineLayout.pushConstantRange,
+    };
+
     const vkPipelineLayout = try (
       self.vkd.vkdd.createPipelineLayout(
         self.vkd.device,
@@ -2020,8 +2053,10 @@ pub const Rasterizer = struct {
           .flags = .{},
           .setLayoutCount = @intCast(u32, descriptorSetLayouts.items.len),
           .pSetLayouts = descriptorSetLayouts.items.ptr,
-          .pushConstantRangeCount = 0,
-          .pPushConstantRanges = undefined,
+          .pushConstantRangeCount = std.math.min(1, pushConstantRange.size),
+          .pPushConstantRanges = (
+            @ptrCast([*] const vk.PushConstantRange, &pushConstantRange)
+          ),
         },
         null
       )

@@ -5,14 +5,16 @@ pub const PoolIdx = u64;
 pub const BufferIdx = u64;
 
 pub const ActionType = enum {
-  pipelineBarrier,
-  transferImageToBuffer,
-  transferBufferToImage,
-  transferMemory,
-  uploadTexelToImageMemory,
+  bindDescriptorSets,
   bindPipeline,
   dispatch,
-  bindDescriptorSets,
+  dispatchIndirect,
+  pipelineBarrier,
+  pushConstants,
+  transferBufferToImage,
+  transferImageToBuffer,
+  transferMemory,
+  uploadTexelToImageMemory,
 
   pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
 };
@@ -75,7 +77,7 @@ pub const TransferImage = struct {
 };
 
 pub const TransferBufferToImage = struct {
-  actionType : mtr.command.ActionType = .TransferBufferToImage,
+  actionType : mtr.command.ActionType = .transferBufferToImage,
   bufferSrc : mtr.buffer.Idx,
   imageDst : mtr.image.Idx,
   xOffset : u32 = 0, yOffset : u32 = 0, zOffset : u32 = 0,
@@ -103,16 +105,31 @@ pub const UploadTexelToImageMemory = struct {
 };
 
 pub const BindPipeline = struct {
+  actionType : mtr.command.ActionType = .bindPipeline,
   pipeline : mtr.pipeline.ComputeIdx,
 };
 
 pub const Dispatch = struct {
+  actionType : mtr.command.ActionType = .dispatch,
   width : u32, height : u32, depth : u32,
 };
 
+pub const DispatchIndirect = struct {
+  actionType : mtr.command.ActionType = .dispatchIndirect,
+  buffer : mtr.buffer.Idx,
+  offset : usize,
+};
+
 pub const BindDescriptorSets = struct {
+  actionType : mtr.command.ActionType = .bindDescriptorSets,
   pipelineLayout : mtr.pipeline.LayoutIdx,
   descriptorSets : [] mtr.descriptor.LayoutIdx,
+};
+
+pub const PushConstants = struct {
+  actionType : mtr.command.ActionType = .pushConstants,
+  pipelineLayout : mtr.pipeline.LayoutIdx,
+  memory : [] const u8,
 };
 
 // some amount of action independent of another, such that one complete amount
@@ -121,14 +138,16 @@ pub const BindDescriptorSets = struct {
 // Commands are not unique, and as such are treated as primitives and may
 //   not refer to any specific unique index of a queue
 pub const Action = union(ActionType) {
-  transferMemory : mtr.command.TransferMemory,
-  transferImageToBuffer : mtr.command.TransferImageToBuffer,
-  transferBufferToImage : mtr.command.TransferBufferToImage,
-  pipelineBarrier : mtr.command.PipelineBarrier,
-  uploadTexelToImageMemory : mtr.command.UploadTexelToImageMemory,
-  bindPipeline : mtr.command.BindPipeline,
-  dispatch : mtr.command.Dispatch,
   bindDescriptorSets : mtr.command.BindDescriptorSets,
+  bindPipeline : mtr.command.BindPipeline,
+  dispatchIndirect : mtr.command.DispatchIndirect,
+  dispatch : mtr.command.Dispatch,
+  pipelineBarrier : mtr.command.PipelineBarrier,
+  pushConstants : mtr.command.PushConstants,
+  transferBufferToImage : mtr.command.TransferBufferToImage,
+  transferImageToBuffer : mtr.command.TransferImageToBuffer,
+  transferMemory : mtr.command.TransferMemory,
+  uploadTexelToImageMemory : mtr.command.UploadTexelToImageMemory,
 
   // pub fn jsonStringify(
   //   self : @This(),

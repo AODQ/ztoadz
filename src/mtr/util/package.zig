@@ -254,6 +254,8 @@ pub fn stageMemoryToImage(
     );
   }
 
+  std.log.info("will copy {} bytes", .{params.memoryToUpload.len});
+
   { // -- copy data
     var mappedMemory = try mtrCtx.mapMemoryBuffer(.{
       .mapping = mtr.util.MappingType.Write,
@@ -283,7 +285,7 @@ pub fn stageMemoryToImage(
           &[_] mtr.command.PipelineBarrier.ImageTapeAction {
             .{
               .tape = params.imageTape,
-              .layout = .general,
+              .layout = .transferDst,
               .accessFlags = .{ .transferWrite = true, },
             },
           }
@@ -292,12 +294,12 @@ pub fn stageMemoryToImage(
     );
 
     commandBufferRecorder.append(
-      mtr.command.TransferBufferToImage(.{
+      mtr.command.TransferBufferToImage {
         .bufferSrc = stagingBuffer,
-        .imageDst = params.bufferDst,
+        .imageDst = params.imageDst,
         .xOffset = 0, .yOffset = 0, .zOffset = 0,
         .width = 1024, .height = 1024, .depth = 1,
-      })
+      }
     );
   }
 

@@ -169,6 +169,10 @@ pub const SetWriter = struct {
     // const uBind = try layout.bindingIdxToLayoutBinding.get(binding.binding);
   }
 
+  pub fn setBySlice(self : * @This(), bindings : [] Binding) !void {
+    for (bindings) |binding| try set(self, binding);
+  }
+
   pub fn finish(self : * @This()) void {
     self.context.rasterizer.writeDescriptorSet(self.context.*, self.*)
       catch |err| {

@@ -59,6 +59,7 @@ pub const Context = struct {
     primitiveAllocator : std.mem.Allocator,
     optimization : mtr.RenderingOptimizationLevel,
   ) @This() {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var allocatedRasterizer = (
       primitiveAllocator.create(backend.context.Rasterizer)
     ) catch {
@@ -131,6 +132,7 @@ pub const Context = struct {
   }
 
   pub fn deinit(self : * @This()) void {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     self.rasterizer.deviceWaitIdle();
 
     var queueIterator = self.queues.iterator();
@@ -379,6 +381,7 @@ pub const Context = struct {
     ci : mtr.heap.ConstructInfo,
     idx : mtr.heap.Idx,
   ) !mtr.heap.Idx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const heap = mtr.heap.Primitive {
       .visibility = ci.visibility,
       .contextIdx = idx,
@@ -395,6 +398,7 @@ pub const Context = struct {
     self : * @This(),
     ci : mtr.heap.ConstructInfo,
   ) !mtr.heap.Idx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.constructHeapWithId(ci, prevIdx);
@@ -405,6 +409,7 @@ pub const Context = struct {
     ci : mtr.heap.ConstructInfo,
     memoryRequirements : [] mtr.util.MemoryRequirements,
   ) !mtr.heap.Idx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const idx = self.allocIdx;
     self.allocIdx += 1;
     const heap = mtr.heap.Primitive {
@@ -426,6 +431,7 @@ pub const Context = struct {
     ci : mtr.heap.RegionConstructInfo,
     idx : mtr.heap.RegionIdx,
   ) !mtr.heap.RegionIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var heap = self.heaps.getPtr(ci.allocatedHeap).?;
     const heapRegion = mtr.heap.Region {
       .allocatedHeap = ci.allocatedHeap,
@@ -449,6 +455,7 @@ pub const Context = struct {
   pub fn constructHeapRegion(
     self : * @This(), ci : mtr.heap.RegionConstructInfo
   ) !mtr.heap.RegionIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.constructHeapRegionWithId(ci, prevIdx);
@@ -460,6 +467,7 @@ pub const Context = struct {
     offset : usize,
     heapRegion : mtr.heap.RegionIdx,
   ) void {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var buffer = self.buffers.getPtr(bufferIdx).?;
     // TODO assert allocated heap region is null
     std.debug.assert(buffer.allocatedHeapRegion == 0);
@@ -475,6 +483,7 @@ pub const Context = struct {
     offset : usize,
     heapRegion : mtr.heap.RegionIdx,
   ) void {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var image = self.images.getPtr(imageIdx).?;
     // TODO assert allocated heap region is null
     std.debug.assert(image.allocatedHeapRegion == 0);
@@ -489,6 +498,7 @@ pub const Context = struct {
     ci : mtr.buffer.ConstructInfo,
     idx : mtr.buffer.Idx,
   ) !mtr.buffer.Idx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const buffer = mtr.buffer.Primitive {
       .allocatedHeapRegion = 0, // TODO use null handle i guess
       .offset = ci.offset,
@@ -510,6 +520,7 @@ pub const Context = struct {
   pub fn constructBuffer(
     self : * @This(), ci : mtr.buffer.ConstructInfo
   ) !mtr.buffer.Idx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.constructBufferWithId(ci, prevIdx);
@@ -519,6 +530,7 @@ pub const Context = struct {
     self : * @This(),
     bufferIdx : mtr.buffer.Idx,
   ) mtr.util.MemoryRequirements {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const buffer = self.buffers.get(bufferIdx).?;
     return self.rasterizer.bufferMemoryRequirements(self.*, buffer);
   }
@@ -528,8 +540,10 @@ pub const Context = struct {
     ci : mtr.image.ConstructInfo,
     idx : mtr.image.Idx,
   ) !mtr.image.Idx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const image = mtr.image.Primitive {
       .allocatedHeapRegion = 0, // TODO
+      .label = ci.label,
       .offset = ci.offset,
       .width = ci.width, .height = ci.height, .depth = ci.depth,
       .samplesPerTexel = ci.samplesPerTexel,
@@ -553,6 +567,7 @@ pub const Context = struct {
   pub fn constructImage(
     self : * @This(), ci : mtr.image.ConstructInfo,
   ) !mtr.image.Idx {
+    std.log.debug("{s}{s} ({s})", .{"mtr -- ", @src().fn_name, ci.label});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.constructImageWithId(ci, prevIdx);
@@ -563,6 +578,7 @@ pub const Context = struct {
     ci : mtr.image.ViewCreateInfo,
     idx : mtr.image.ViewIdx,
   ) !mtr.image.ViewIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const imageView = mtr.image.View {
       .image = ci.image,
       .viewType = ci.viewType,
@@ -583,6 +599,7 @@ pub const Context = struct {
   pub fn createImageView(
     self : * @This(), ci : mtr.image.ViewCreateInfo,
   ) !mtr.image.ViewIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.createImageViewWithId(ci, prevIdx);
@@ -592,6 +609,7 @@ pub const Context = struct {
     self : * @This(),
     imageIdx : mtr.image.Idx,
   ) mtr.util.MemoryRequirements {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const image = self.images.get(imageIdx).?;
     return self.rasterizer.imageMemoryRequirements(self.*, image);
   }
@@ -607,6 +625,7 @@ pub const Context = struct {
     ci : mtr.command.PoolConstructInfo,
     idx : mtr.command.PoolIdx,
   ) !mtr.command.PoolIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const pool = mtr.command.Pool {
       .flags = ci.flags,
       .queue = ci.queue,
@@ -628,6 +647,7 @@ pub const Context = struct {
     self : * @This(),
     ci : mtr.command.PoolConstructInfo,
   ) !mtr.command.PoolIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.constructCommandPoolWithId(ci, prevIdx);
@@ -638,6 +658,7 @@ pub const Context = struct {
     ci : mtr.command.BufferConstructInfo,
     id : u64,
   ) !mtr.command.BufferIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var commandBuffer = mtr.command.Buffer {
       .commandPool = ci.commandPool,
       .commandRecordings = (
@@ -666,6 +687,7 @@ pub const Context = struct {
     self : * @This(),
     ci : mtr.command.BufferConstructInfo,
   ) !mtr.command.BufferIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.constructCommandBufferWithId(ci, prevIdx);
@@ -676,6 +698,7 @@ pub const Context = struct {
     ci : mtr.queue.ConstructInfo,
     idx : mtr.queue.Idx,
   ) !mtr.queue.Idx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const queue = mtr.queue.Primitive {
       .workType = ci.workType,
       .contextIdx = idx,
@@ -692,6 +715,7 @@ pub const Context = struct {
     self : * @This(),
     ci : mtr.queue.ConstructInfo,
   ) !mtr.queue.Idx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.constructQueueWithId(ci, prevIdx);
@@ -700,6 +724,7 @@ pub const Context = struct {
   // ----- destroy primitives -----
 
   pub fn destroyHeap(self : * @This(), heapIdx : mtr.heap.Idx) void {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const heap : ? * mtr.heap.Primitive = self.heaps.getPtr(heapIdx);
     std.debug.assert(heap != null);
 
@@ -709,6 +734,7 @@ pub const Context = struct {
   }
 
   pub fn destroyQueue(self : * @This(), queueIdx : mtr.queue.Idx) void {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var queue : ? * mtr.queue.Primitive = self.queues.getPtr(queueIdx);
     std.debug.assert(queue != null);
 
@@ -736,6 +762,7 @@ pub const Context = struct {
     self : * @This(),
     commandBufferIdx : mtr.command.BufferIdx,
   ) void {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const commandPair = self.getCommandBufferFromId(commandBufferIdx);
     var commandPool = commandPair.pool;
     var commandBuffer = commandPair.buffer;
@@ -760,6 +787,7 @@ pub const Context = struct {
     self : * @This(),
     commandBuffer : mtr.command.BufferIdx,
   ) void {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     self.rasterizer.endCommandBufferWriting(self.*, commandBuffer);
   }
 
@@ -769,6 +797,7 @@ pub const Context = struct {
     commandBufferIdx : mtr.command.BufferIdx,
     command : anytype,
   ) void {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var action : mtr.command.Action = undefined;
     if (@TypeOf(command) == mtr.command.TransferMemory) {
       action = .{.transferMemory = command};
@@ -782,8 +811,14 @@ pub const Context = struct {
       action = .{.bindPipeline = command};
     } else if (@TypeOf(command) == mtr.command.Dispatch) {
       action = .{.dispatch = command};
+    } else if (@TypeOf(command) == mtr.command.DispatchIndirect) {
+      action = .{.dispatchIndirect = command};
     } else if (@TypeOf(command) == mtr.command.BindDescriptorSets) {
       action = .{.bindDescriptorSets = command};
+    } else if (@TypeOf(command) == mtr.command.PushConstants) {
+      action = .{.pushConstants = command};
+    } else if (@TypeOf(command) == mtr.command.TransferBufferToImage) {
+      action = .{.transferBufferToImage = command};
     } else {
       unreachable; // if this hits, probably need to add the command
     }
@@ -803,6 +838,7 @@ pub const Context = struct {
     queueIdx : mtr.queue.Idx,
     commandBufferIdx : mtr.command.BufferIdx,
   ) void {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var queue : ? * mtr.queue.Primitive = self.queues.getPtr(queueIdx);
     var commandBuffer = self.getCommandBufferFromId(commandBufferIdx).buffer;
 
@@ -814,6 +850,7 @@ pub const Context = struct {
   }
 
   pub fn queueFlush(self : @This(), queueIdx : mtr.queue.Idx) void {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var queue : ? * mtr.queue.Primitive = self.queues.getPtr(queueIdx);
     std.debug.assert(queue != null);
 
@@ -824,6 +861,7 @@ pub const Context = struct {
     self : @This(),
     range : mtr.util.MappedMemoryRange,
   ) ! mtr.util.MappedMemory {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     // std.debug.assert( TODO
     //   (
     //         heapRegion.visibility == .hostVisible
@@ -841,6 +879,7 @@ pub const Context = struct {
     self : @This(),
     range : mtr.util.MappedMemoryRangeBuffer,
   ) ! mtr.util.MappedMemory {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var buffer = self.buffers.get(range.buffer).?;
     // offset into the subheap with the buffer's offset
     return self.mapMemory(.{
@@ -855,6 +894,7 @@ pub const Context = struct {
     self : @This(),
     memory : mtr.util.MappedMemory,
   ) void {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     return self.rasterizer.unmapMemory(self, memory);
   }
 
@@ -862,6 +902,7 @@ pub const Context = struct {
     _ : @This(),
     _ : mtr.pipeline.ConstructInfo,
   ) !mtr.primitive.Idx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     // const pipeline = mtr.pipeline.Primitive {
     //   .layout = ci.layout,
     //   .depthTestEnable = ci.depthTestEnable,
@@ -880,6 +921,7 @@ pub const Context = struct {
     ci : mtr.shader.ConstructInfo,
     idx : mtr.shader.Idx,
   ) !mtr.shader.Idx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const shaderModule = mtr.shader.Module {
       .data = ci.data,
       .contextIdx = idx,
@@ -896,6 +938,7 @@ pub const Context = struct {
   pub fn createShaderModule(
     self : * @This(), ci : mtr.shader.ConstructInfo
   ) !mtr.shader.Idx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.createShaderModuleWithId(ci, prevIdx);
@@ -906,6 +949,7 @@ pub const Context = struct {
     ci : mtr.descriptor.SetPoolCreateInfo,
     id : u64,
   ) !mtr.descriptor.PoolIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const descriptorSetPool = mtr.descriptor.SetPool {
       .frequency = ci.frequency,
       .maxSets = ci.maxSets,
@@ -922,6 +966,7 @@ pub const Context = struct {
     self : * @This(),
     ci : mtr.descriptor.SetPoolCreateInfo,
   ) !mtr.descriptor.PoolIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.createDescriptorSetPoolWithId(ci, prevIdx);
@@ -932,6 +977,7 @@ pub const Context = struct {
     ci : mtr.descriptor.Set,
     id : u64
   ) !mtr.descriptor.SetIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var descriptorSet = ci;
     descriptorSet.contextIdx = id;
     try self.descriptorSets.putNoClobber(id, descriptorSet);
@@ -944,6 +990,7 @@ pub const Context = struct {
     self : * @This(),
     ci : mtr.descriptor.Set,
   ) !mtr.descriptor.SetIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.createDescriptorSetWithId(ci, prevIdx);
@@ -954,6 +1001,7 @@ pub const Context = struct {
     ci : mtr.descriptor.SetLayoutConstructInfo,
     id : u64
   ) !mtr.descriptor.LayoutIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const setLayout = (
       mtr.descriptor.SetLayout.init(self.primitiveAllocator, ci, id)
     );
@@ -968,6 +1016,7 @@ pub const Context = struct {
     self : * @This(),
     ci : mtr.descriptor.SetLayoutConstructInfo,
   ) !mtr.descriptor.LayoutIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.createDescriptorSetLayoutWithId(ci, prevIdx);
@@ -978,6 +1027,7 @@ pub const Context = struct {
     layout : mtr.descriptor.LayoutIdx,
     destinationSet : mtr.descriptor.SetIdx,
   ) mtr.descriptor.SetWriter {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const mtLayout = self.descriptorSetLayouts.get(layout).?;
     return mtr.descriptor.SetWriter.init(self, mtLayout, destinationSet);
   }
@@ -987,6 +1037,7 @@ pub const Context = struct {
     ci : mtr.pipeline.Layout,
     idx : mtr.pipeline.LayoutIdx,
   ) !mtr.pipeline.LayoutIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var pipelineLayout = ci;
     pipelineLayout.contextIdx = idx;
     try self.rasterizer.createPipelineLayout(self.*, pipelineLayout);
@@ -998,6 +1049,7 @@ pub const Context = struct {
     self : * @This(),
     ci : mtr.pipeline.Layout,
   ) !mtr.pipeline.LayoutIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.createPipelineLayoutWithId(ci, prevIdx);
@@ -1008,6 +1060,7 @@ pub const Context = struct {
     ci : mtr.pipeline.Compute,
     idx : mtr.pipeline.ComputeIdx,
   ) !mtr.pipeline.ComputeIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var pipeline = ci;
     pipeline.contextIdx = idx;
     try self.rasterizer.createComputePipeline(self.*, pipeline);
@@ -1019,6 +1072,7 @@ pub const Context = struct {
     self : * @This(),
     ci : mtr.pipeline.Compute,
   ) !mtr.pipeline.ComputeIdx {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.createComputePipelineWithId(ci, prevIdx);
@@ -1029,6 +1083,7 @@ pub const Context = struct {
     self : * @This(),
     visibility : mtr.heap.Visibility,
   ) mtr.util.HeapRegionAllocator {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     return mtr.util.HeapRegionAllocator.init(self, visibility);
   }
 
@@ -1036,6 +1091,7 @@ pub const Context = struct {
     self : * @This(),
     commandBuffer : mtr.command.BufferIdx,
   ) mtr.util.CommandBufferRecorder {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     return mtr.util.CommandBufferRecorder.init(self, commandBuffer);
   }
 };

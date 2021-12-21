@@ -1,0 +1,190 @@
+#version 460
+#extension GL_EXT_shader_atomic_int64 : enable
+#extension GL_EXT_shader_explicit_arithmetic_types : enable
+#extension GL_EXT_shader_image_int64 : require
+
+// triangle ID, unused, unused
+layout (local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
+
+// TODO update this layout & add microrast triangle id/size
+
+layout (set = 0, binding = 0) buffer InputAttributeAssembly {
+  vec4 inputAttributes[];
+};
+
+layout (set = 0, binding = 1) buffer InputAttributeAssemblyMetadata {
+  uint32_t numTriangles;
+  float cameraOriginX;
+  float cameraOriginY;
+  float cameraOriginZ;
+};
+
+layout (set = 0, binding = 2) buffer IntermediaryAttributeAssembly {
+  vec4 intermediaryAttributes[];
+};
+
+layout (set = 0, binding = 3) buffer MicroRastEmitTriangleIDs {
+  uint64_t microRastEmitTriangleIDs[];
+};
+
+layout (set = 0, binding = 4) buffer MicroRastEmitMetadata {
+  uint64_t microRastEmitTriangleCount;
+};
+
+layout (set = 0, binding = 5) buffer TiledRastEmitTriangleIDs {
+  // 16x16x16'000, y*16*16k+x*16k+idx
+  uint64_t tiledRastEmitTriangleIDs[];
+};
+
+struct DispatchIndirect {
+  uint x, y, z, padding;
+};
+
+layout (set = 0, binding = 7) buffer TiledRastDispatches {
+  DispatchIndirect tiledRastDispatches[];
+};
+
+mat4 LookAt(vec3 eye, vec3 center, vec3 up) {
+  vec3 f = normalize(center - eye);
+  vec3 s = normalize(cross(up, f));
+  vec3 u = normalize(cross(f, s));
+
+  mat4 result = mat4(1.0f);
+  result[0][0] = s.x;
+  result[1][0] = s.y;
+  result[2][0] = s.z;
+  result[0][1] = u.x;
+  result[1][1] = u.y;
+  result[2][1] = u.z;
+  result[0][2] = f.x;
+  result[1][2] = f.y;
+  result[2][2] = f.z;
+  result[3][0] = -dot(s, eye);
+  result[3][1] = -dot(u, eye);
+  result[3][2] = -dot(f, eye);
+  return result;
+}
+
+mat4 defaultPerspective() {
+  return mat4(
+    0.5f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.5f, 0.0f, 0.0f,
+    0.0f, 0.0f, 1.0f, 0.0f,
+    0.0f, 0.0f, 0.5f, 1.0f
+  );
+}
+
+vec4 mtEntry(const uint inputId) {
+  const vec4 origin = inputAttributes[inputId];
+  // hardcode matrix
+  const mat4 view = (
+    LookAt(
+      vec3(cameraOriginX, cameraOriginY, cameraOriginZ),
+      vec3(0.0f),
+      vec3(0.0f, -1.0f, 0.0)
+    )
+  );
+  const mat4 proj = defaultPerspective();
+
+  vec4 o = (proj*view)*origin;
+  return o;
+}
+
+uvec4 toSrgb(const vec4 inp) {
+  return uvec4(inp * vec4(255.0f));
+}
+
+float areaOfTriangle(const vec3 v0, const vec3 v1, const vec3 v2) {
+  vec3 e0 = v1-v0;
+  vec3 e1 = v2-v0;
+
+  vec3 e3 = cross(e0, e1);
+  return 0.5f * sqrt(dot(e3, e3));
+}
+
+void main() {
+  const uint triangleId = gl_GlobalInvocationID.x;
+  if (triangleId.x >= numTriangles) return;
+
+  // de-interleave the triangles and compute origin in clipspace
+  // [vtx0, uv0, vtx1, ...]
+  vec4 origin0 = mtEntry(triangleId*6+0);
+  vec4 origin1 = mtEntry(triangleId*6+2);
+  vec4 origin2 = mtEntry(triangleId*6+4);
+
+  intermediaryAttributes[triangleId*6+0] = origin0;
+  intermediaryAttributes[triangleId*6+1] = origin1;
+  intermediaryAttributes[triangleId*6+2] = origin2;
+
+  intermediaryAttributes[triangleId*6+3] = inputAttributes[triangleId*6+1];
+  intermediaryAttributes[triangleId*6+4] = inputAttributes[triangleId*6+3];
+  intermediaryAttributes[triangleId*6+5] = inputAttributes[triangleId*6+5];
+
+  // hack
+  const ivec2 viewportDim = ivec2(2048, 2048);
+
+  // after this point origin is in clipspace
+  #define toScreen(v) v.xy = (viewportDim * v.xy)
+  origin0.xy = toScreen(origin0.xy) / origin0.z;
+  origin1.xy = toScreen(origin1.xy) / origin1.z;
+  origin2.xy = toScreen(origin2.xy) / origin2.z;
+
+  const ivec2 minBounds = (
+    ivec2(
+      max(
+        vec2(-viewportDim/2.0f-vec2(1.0f)),
+        min(origin0.xy, min(origin1.xy, origin2.xy))-vec2(0.5f)
+      )
+    )
+    + viewportDim/2
+  );
+
+  const ivec2 maxBounds = (
+    ivec2(
+      min(
+        vec2(+viewportDim/2.0f+vec2(1.0f)),
+        max(origin0.xy, max(origin1.xy, origin2.xy))+vec2(0.5f)
+      )
+    )
+    + viewportDim/2
+  );
+
+  const float itAreaOfTriangle = (
+    areaOfTriangle(origin0.xyz, origin1.xyz, origin2.xyz)
+  );
+
+  if (itAreaOfTriangle < 128.0) {
+    const uint64_t emitIt = atomicAdd(microRastEmitTriangleCount, 1);
+    microRastEmitTriangleIDs[uint(emitIt)] = triangleId;
+    return;
+  }
+
+  // iterate through all intersecting AABB tiles
+  // 1920 / 16 => 128
+  // thus from X minbounds 160, maxbounds 430,
+  //   do floor(160/128) .. ceil(430/128)
+  //      128            .. 600 (bounds)
+  // TODO this isnt fully working
+  ivec2 itBounds = ivec2(vec2(minBounds)/vec2(128.0f));
+  ivec2 itBoundsMax = ivec2(ceil(vec2(maxBounds)/vec2(128.0f)))+ivec2(1);
+
+  for (; itBounds.x < itBoundsMax.x; ++ itBounds.x)
+  for (; itBounds.y < itBoundsMax.y; ++ itBounds.y) {
+    // AABB--Tri intersection test TODO
+
+    // this should be fine since it acts as a sort of non-atomic max
+    if (tiledRastDispatches[itBounds.y*16 + itBounds.x].z >= 64000) {
+      continue;
+    }
+
+    const uint64_t tileIt = (
+      atomicAdd(tiledRastDispatches[itBounds.y*16 + itBounds.x].z, 1)
+    );
+
+    tiledRastEmitTriangleIDs[
+      (itBounds.y*16+itBounds.x)*64000 + uint(tileIt)
+    ] = (
+      triangleId
+    );
+  }
+}

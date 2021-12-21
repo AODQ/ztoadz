@@ -27,8 +27,8 @@ pub const AccessFlags = packed struct {
   transferWrite : bool = false,
   hostRead : bool = false,
   hostWrite : bool = false,
+  indirectCommand : bool = false,
 };
-
 
 // // semaphores map to Vk1.2 timeline semaphores
 // pub const Semaphore = struct {

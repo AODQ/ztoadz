@@ -1,0 +1,25 @@
+#version 460
+#extension GL_EXT_shader_image_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types : require
+
+// tilebuffer width (16), tilebuffer height 16), unused
+// this shader will only have one single dispatch
+layout (local_size_x = 16, local_size_y = 16, local_size_z=1) in;
+
+struct DispatchIndirect {
+  uint x, y, z, numTriangles;
+};
+
+layout (set = 0, binding = 0) buffer TiledRastDispatches {
+  DispatchIndirect tiledRastDispatches[];
+};
+
+void main() {
+  const uvec2 dispatchId = gl_GlobalInvocationID.xy;
+
+  const uint idx = dispatchId.y*16+dispatchId.x;
+
+  // just round it down to 16 divisible for tiled visibility
+  tiledRastDispatches[idx].numTriangles = tiledRastDispatches[idx].z;
+  tiledRastDispatches[idx].z = (tiledRastDispatches[idx].z + 15) / 16;
+}

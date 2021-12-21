@@ -1,0 +1,88 @@
+#version 460
+#extension GL_EXT_shader_image_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types : require
+
+// tilebuffer width (16), tilebuffer height (16), individual triangle (<16'000)
+layout (local_size_x = 1, local_size_y = 1, local_size_z=16) in;
+
+layout (set = 0, binding = 0, r64ui) uniform u64image2D visibilitySurfaceImage;
+
+layout (set = 0, binding = 1) buffer IntermediaryAttributeAssembly {
+  vec4 intermediaryAttributes[];
+};
+
+// TODO...
+// layout (set = 0, binding = 2) buffer MeshIntermediaryAssembly {
+//   uint originOffset; // FOR NOW we assume 0
+//   uint originStride; // FOR NOW we assume sizeof(vec4) (default of 0 as well)
+// };
+
+layout (set = 0, binding = 2) buffer TiledRastEmitTriangleIDs {
+  // 16x16x16'000, y*16*16k+x*16k+idx
+  uint64_t tiledRastEmitTriangleIDs[];
+};
+
+struct DispatchIndirect {
+  uint x, y, z, numTriangles;
+};
+
+layout (set = 0, binding = 4) buffer TiledRastDispatches {
+  DispatchIndirect tiledRastDispatches[];
+};
+
+layout (push_constant) uniform PushConstants {
+  uint32_t tileIt;
+} pushConsts;
+
+#include "simple-triangle-library-rasterizer.glsl"
+
+void main() {
+  const ivec2 viewportDim = imageSize(visibilitySurfaceImage);
+  const ivec3 dispatchId = (
+    ivec3(
+      pushConsts.tileIt%16,
+      pushConsts.tileIt/16,
+      gl_GlobalInvocationID.z
+    )
+  );
+
+  const uint32_t emitId = dispatchId.z;
+
+  const uint triangleCount = uint(
+    tiledRastDispatches[dispatchId.y*16+dispatchId.x].numTriangles
+  );
+
+  if (emitId >= triangleCount) {
+    return;
+  }
+
+  const uint32_t triangleId = uint32_t(
+    tiledRastEmitTriangleIDs[
+      (16*dispatchId.y+dispatchId.x)*64000
+      + emitId
+    ]
+  );
+
+  const TriangleInfo tri = GatherTriangleInfo(triangleId, viewportDim);
+
+  // Currently only divisible by 16 resolutions supported until this and others
+  // shit is fixed
+  // TODO this isnt fully working
+  const ivec2 minBounds = 128*(ivec2(0)+dispatchId.xy);
+  const ivec2 maxBounds = 128*(ivec2(2)+dispatchId.xy);
+
+  for (int itX = minBounds.x; itX < maxBounds.x; ++ itX)
+  for (int itY = minBounds.y; itY < maxBounds.y; ++ itY) {
+    vec2 uvcoord = vec2(itX, itY) - (viewportDim/vec2(2.0f)) + vec2(0.5f);
+    float interDepth = computeTriangleDepthAtUv(tri, uvcoord);
+    if (interDepth > 0.0f && interDepth <= 1.0f) {
+      uint32_t depthU32 = floatBitsToUint(interDepth);
+      uint64_t triangleStore = triangleId | (uint64_t(depthU32) << 32);
+      imageAtomicMax(
+        visibilitySurfaceImage,
+        ivec2(itX, itY),
+        triangleStore
+      );
+    }
+  }
+}

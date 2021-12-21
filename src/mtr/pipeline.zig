@@ -7,24 +7,14 @@ const std = @import("std");
 pub const ComputeIdx = u64;
 pub const LayoutIdx = u64;
 
-pub const ComputeFlags = packed struct {
-};
-
-pub const ShaderStageFlags = packed struct {
-};
-
-pub const ShaderStageCreateInfo = struct {
-};
-
 pub const Layout = struct {
   descriptorSetLayouts : [] const mtr.descriptor.LayoutIdx,
+  pushConstantRange : u32 = 0,
 
   contextIdx : LayoutIdx = 0,
 };
 
 pub const Compute = struct {
-  computeFlags : ComputeFlags,
-  stageFlags : ShaderStageFlags,
   shaderModule : mtr.shader.Idx,
   pName : [*:0] const u8,
   layout : mtr.pipeline.LayoutIdx,

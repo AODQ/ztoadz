@@ -6,6 +6,7 @@ pub const ViewIdx = u64;
 
 pub const ConstructInfo = struct {
   offset : u64, // TODO change for buffer/image 'offset' -> 'offsetIntoHeap'
+  label : [] const u8,
   width : u32, height : u32, depth : u32,
   samplesPerTexel : mtr.image.Sample,
   arrayLayers : u32,
@@ -68,6 +69,7 @@ pub const ImageUsageFlags = packed struct {
 
 pub const Primitive = struct {
   allocatedHeapRegion : mtr.heap.RegionIdx,
+  label : [] const u8,
   offset : u64, // TODO change for buffer/image 'offset' -> 'offsetIntoHeap'
   width : u32, height : u32, depth : u32,
   samplesPerTexel : mtr.image.Sample,

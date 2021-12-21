@@ -1,7 +1,6 @@
 # ztoadz / MTR
 
-this is just a toy project to play around with Zig in a real-time graphics
-context.
+this is a toy project to play around with Zig in a real-time graphics context.
 
 to test: `zig test tests/package.zig -lc -lOpenCL --main-pkg-path .`
 
@@ -9,21 +8,39 @@ to test: `zig test tests/package.zig -lc -lOpenCL --main-pkg-path .`
 This exists as both a rendering backend 'MTR' (Monte Toad Renderer), as well
   as a front-end renderering application. The rendering backend is meant to be
   implementable for any graphics API backend (vulkan, directx, etc), but the
-  current rendering backend is an OpenCL3.0 software-based rasterizer.
+  current rendering backend supports just Vulkan.
 
-Like a lot of other graphics APIs, it's meant to bridge the gap between
-  low-level APIs and OpenGL. Instead of taking the HW-rasterize approach many
-  other APIs do, this takes a more general-compute approach, however you could
-  probably implement a rasterized backend as well.
+This is a compute-based rendering pipeline, and as such no use of the
+  rasterization pipeline is used (at least for now). A lot of inspiration is
+  taken from nvidia's mesh shaders and ue5's nanite.
 
+The rendering pipeline looks like
 
-- Mapping
-  Buffers and images may be mapped to memory, as long as the following is true:
+## Mesh assembler
 
-    * the underlying heap region's visibility is not deviceOnly
-    * the underlying heap region's visibility is hostVisible or hostWritable
+  User can fetch attributes from storage buffers and emit them to an
+  intermediary buffer, which selects how the triangle will be rasterized
+  (micro-rasterizer or tile-based rasterizer).
 
-  There is no way to map as both read/write. As well, if the heap region
-    visibility is hostVisible, the mapping will be read-only by the host, while a
-    hostWritable means the mapping will be write-only. The implementation may
-    choose to invalidate the underlying region on a write-only mapping.
+## Microrasterizer
+
+  Nanite UE5 style rendering. One thread per triangle, iterates the bounds of
+    the triangle like traditional scanline rasterization. This renders to a
+    visibility buffer with `imageAtomicMax`.
+
+## Tile based rasterizer
+
+  Screen is split into 16x16 bins and triangles are placed into them if they
+    are too large for the micro-rasterizer. Instead of iterating the bounds of
+    the triangle, the tile is iterated through. Also renders to the same
+    visibility buffer.
+
+## Material shader
+
+  Renders the material of the primitives as fragments, by using the depth and
+    triangle ID stored in visibility buffer to recompute barycentric UV coords.
+
+Goals to experiment with:
+
+  - MSAA with visibility/deferred rendering
+  - Debug interface over Vk

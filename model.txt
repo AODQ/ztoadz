@@ -1,1 +1,0 @@
-models/diablo3_pose.obj.mtr

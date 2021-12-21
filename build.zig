@@ -18,7 +18,9 @@ fn addShader(
   const runCmd =
     builder.addSystemCommand(
       &[_][] const u8 {
-        "glslc", "--target-env=vulkan1.2", fullFileIn, "-o", fullFileOut
+        "glslc",
+        "--target-env=vulkan1.2",
+        fullFileIn, "-o", fullFileOut
       }
     );
   exe.step.dependOn(&runCmd.step);
@@ -58,17 +60,32 @@ pub fn build(builder: * std.build.Builder) !void {
 
   try addShader(
     builder, exe,
-    "simple-triangle-vert.comp", "simple-triangle-vert.spv"
+    "simple-triangle-mesh.comp",
+    "simple-triangle-mesh.spv"
   );
 
   try addShader(
     builder, exe,
-    "simple-triangle-frag.comp", "simple-triangle-frag.spv"
+    "simple-triangle-tiled-visibility.comp",
+    "simple-triangle-tiled-visibility.spv"
   );
 
   try addShader(
     builder, exe,
-    "simple-triangle-postproc.comp", "simple-triangle-postproc.spv"
+    "simple-triangle-tiled-indirect-division.comp",
+    "simple-triangle-tiled-indirect-division.spv"
+  );
+
+  try addShader(
+    builder, exe,
+    "simple-triangle-microrast-visibility.comp",
+    "simple-triangle-microrast-visibility.spv"
+  );
+
+  try addShader(
+    builder, exe,
+    "simple-triangle-material.comp",
+    "simple-triangle-material.spv"
   );
 
   exe.linkSystemLibrary("c");
