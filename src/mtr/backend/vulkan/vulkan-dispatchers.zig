@@ -41,6 +41,7 @@ pub const VulkanDeviceDispatch = vk.DeviceWrapper(&.{
   .cmdClearColorImage ,
   .cmdCopyBuffer2KHR,
   .cmdCopyBufferToImage2KHR,
+  .cmdCopyImage2KHR ,
   .cmdCopyImageToBuffer2KHR,
   .cmdDispatch,
   .cmdDispatchIndirect,

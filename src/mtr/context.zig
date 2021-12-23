@@ -40,6 +40,9 @@ pub const Context = struct {
   commandBufferIdToPoolId : (
     std.AutoHashMap(mtr.command.BufferIdx, mtr.command.PoolIdx)
   ),
+  semaphores : std.AutoHashMap(mtr.memory.SemaphoreId, mtr.memory.Semaphore),
+  fences : std.AutoHashMap(mtr.memory.FenceId, mtr.memory.Fence),
+  swapchains : std.AutoHashMap(mtr.window.SwapchainId, mtr.window.Swapchain),
 
   primitiveAllocator : std.mem.Allocator,
 
@@ -55,19 +58,29 @@ pub const Context = struct {
   var jsonWritingContext : ? * Context = null;
   pub const utilContextIdx : u64 = 0;
 
-  pub fn init(
-    primitiveAllocator : std.mem.Allocator,
+  pub const CreateInfo = struct {
+    allocator : std.mem.Allocator,
     optimization : mtr.RenderingOptimizationLevel,
+    // TODO we should also pass in GLFW screen etc
+    width : usize,
+    height : usize,
+    windowTitle : [*:0] const u8 = "zTOADz",
+    floating : bool = true,
+    resizable : bool = false,
+  };
+
+  pub fn init(
+    info : CreateInfo,
   ) @This() {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var allocatedRasterizer = (
-      primitiveAllocator.create(backend.context.Rasterizer)
+      info.allocator.create(backend.context.Rasterizer)
     ) catch {
       std.debug.panic("could not allocate rendering context", .{});
     };
 
     allocatedRasterizer .* = (
-      backend.context.Rasterizer.init(primitiveAllocator)
+      backend.context.Rasterizer.init(info)
       catch |err| {
         std.log.err(
           "{s} ({s})",
@@ -82,35 +95,34 @@ pub const Context = struct {
 
     var self : @This() = undefined;
     self = .{
-      .heaps = @TypeOf(self.heaps).init(primitiveAllocator),
-      .queues = @TypeOf(self.queues).init(primitiveAllocator),
-      .heapRegions = @TypeOf(self.heapRegions).init(primitiveAllocator),
-      .buffers = @TypeOf(self.buffers).init(primitiveAllocator),
-      .images = @TypeOf(self.images).init(primitiveAllocator),
-      .imageViews = @TypeOf(self.imageViews).init(primitiveAllocator),
+      .heaps = @TypeOf(self.heaps).init(info.allocator),
+      .queues = @TypeOf(self.queues).init(info.allocator),
+      .heapRegions = @TypeOf(self.heapRegions).init(info.allocator),
+      .buffers = @TypeOf(self.buffers).init(info.allocator),
+      .images = @TypeOf(self.images).init(info.allocator),
+      .imageViews = @TypeOf(self.imageViews).init(info.allocator),
       .descriptorSetPools = (
-        @TypeOf(self.descriptorSetPools).init(primitiveAllocator)
+        @TypeOf(self.descriptorSetPools).init(info.allocator)
       ),
-      .descriptorSets = (
-        @TypeOf(self.descriptorSets).init(primitiveAllocator)
-      ),
+      .descriptorSets = @TypeOf(self.descriptorSets).init(info.allocator),
       .descriptorSetLayouts = (
-        @TypeOf(self.descriptorSetLayouts).init(primitiveAllocator)
+        @TypeOf(self.descriptorSetLayouts).init(info.allocator)
       ),
-      .shaderModules = @TypeOf(self.shaderModules).init(primitiveAllocator),
-      .computePipelines = (
-        @TypeOf(self.computePipelines).init(primitiveAllocator)
-      ),
-      .pipelineLayouts = @TypeOf(self.pipelineLayouts).init(primitiveAllocator),
-      .commandPools = @TypeOf(self.commandPools).init(primitiveAllocator),
-      .primitiveAllocator = primitiveAllocator,
-      .optimization = optimization,
+      .shaderModules = @TypeOf(self.shaderModules).init(info.allocator),
+      .computePipelines = @TypeOf(self.computePipelines).init(info.allocator),
+      .pipelineLayouts = @TypeOf(self.pipelineLayouts).init(info.allocator),
+      .commandPools = @TypeOf(self.commandPools).init(info.allocator),
+      .semaphores = @TypeOf(self.semaphores).init(info.allocator),
+      .fences = @TypeOf(self.fences).init(info.allocator),
+      .swapchains = @TypeOf(self.swapchains).init(info.allocator),
+      .primitiveAllocator = info.allocator,
+      .optimization = info.optimization,
       .rasterizer = allocatedRasterizer,
       .allocIdx = 100, // the first 100 indices are reserved for utility
       .commandBufferIdToPoolId = (
         std
           .AutoHashMap(mtr.command.BufferIdx, mtr.command.PoolIdx)
-          .init(primitiveAllocator)
+          .init(info.allocator)
       )
     };
 
@@ -161,6 +173,9 @@ pub const Context = struct {
     self.computePipelines.deinit();
     self.pipelineLayouts.deinit();
     self.descriptorSets.deinit();
+    self.fences.deinit();
+    self.semaphores.deinit();
+    self.swapchains.deinit();
     self.descriptorSetLayouts.deinit();
     self.descriptorSetPools.deinit();
     self.heapRegions.deinit();
@@ -819,6 +834,8 @@ pub const Context = struct {
       action = .{.pushConstants = command};
     } else if (@TypeOf(command) == mtr.command.TransferBufferToImage) {
       action = .{.transferBufferToImage = command};
+    } else if (@TypeOf(command) == mtr.command.TransferImageToImage) {
+      action = .{.transferImageToImage = command};
     } else {
       unreachable; // if this hits, probably need to add the command
     }
@@ -837,15 +854,16 @@ pub const Context = struct {
     self : @This(),
     queueIdx : mtr.queue.Idx,
     commandBufferIdx : mtr.command.BufferIdx,
-  ) void {
+    sync : mtr.memory.CommandBufferSynchronization,
+  ) !void {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var queue : ? * mtr.queue.Primitive = self.queues.getPtr(queueIdx);
     var commandBuffer = self.getCommandBufferFromId(commandBufferIdx).buffer;
 
     std.debug.assert(queue != null);
 
-    self.rasterizer.submitCommandBufferToQueue(
-      self, queue.?.*, commandBuffer.*,
+    try self.rasterizer.submitCommandBufferToQueue(
+      self, queue.?.*, commandBuffer.*, sync,
     );
   }
 
@@ -1076,6 +1094,116 @@ pub const Context = struct {
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
     return self.createComputePipelineWithId(ci, prevIdx);
+  }
+
+  pub fn createSemaphoreWithId(
+    self : * @This(),
+    idx : mtr.memory.SemaphoreId,
+  ) !mtr.memory.SemaphoreId {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
+    var semaphore = mtr.memory.Semaphore { .contextIdx = idx, };
+    try self.rasterizer.createSemaphore(self.*, semaphore);
+    try self.semaphores.putNoClobber(idx, semaphore);
+    return idx;
+  }
+
+  pub fn createSemaphore(
+    self : * @This(),
+  ) !mtr.memory.SemaphoreId {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
+    const prevIdx = self.allocIdx;
+    self.allocIdx += 1;
+    return try self.createSemaphoreWithId(prevIdx);
+  }
+
+  pub fn createFenceWithId(
+    self : * @This(),
+    ci : mtr.pipeline.Fence,
+    idx : mtr.memory.FenceId,
+  ) !mtr.memory.FenceId {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
+    ci.contextIdx = idx;
+    try self.rasterizer.createFence(self.*, ci);
+    try self.fences.putNoClobber(idx, ci);
+    return idx;
+  }
+  pub fn createFence(
+    self : * @This(),
+    ci : mtr.pipeline.Fence,
+  ) !mtr.memory.Fence {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
+    const prevIdx = self.allocIdx;
+    self.allocIdx += 1;
+    return self.createFenceWithId(prevIdx, ci);
+  }
+
+  pub fn createSwapchainWithId(
+    self : * @This(),
+    idx : mtr.window.SwapchainId,
+    ci : mtr.window.Swapchain,
+  ) !mtr.window.SwapchainId {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
+    var mtrSwapchain = ci;
+    mtrSwapchain.contextIdx = idx;
+    try self.rasterizer.createSwapchain(self.*, mtrSwapchain);
+    try self.swapchains.putNoClobber(idx, mtrSwapchain);
+    return idx;
+  }
+  pub fn createSwapchain(
+    self : * @This(),
+    ci : mtr.window.Swapchain,
+  ) !mtr.window.SwapchainId {
+    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
+    const prevIdx = self.allocIdx;
+    self.allocIdx += 1;
+    return try self.createSwapchainWithId(prevIdx, ci);
+  }
+
+  pub fn swapchainImageCount(
+    self : * @This(),
+    swapchain : mtr.window.SwapchainId,
+  ) !u32 {
+    return try self.rasterizer.swapchainImageCount(self.*, swapchain);
+  }
+  pub fn swapchainImages(
+    self : * @This(),
+    swapchain : mtr.window.SwapchainId,
+    images : [] mtr.image.Idx,
+  ) !void {
+    return try self.rasterizer.swapchainImages(self, swapchain, images);
+  }
+
+  // the returned index is into the swapchain (not the image ID)
+  pub fn swapchainAcquireNextImage(
+    self : * @This(),
+    swapchainId : mtr.window.SwapchainId,
+    semaphoreId : ? mtr.memory.SemaphoreId,
+    fenceId     : ? mtr.memory.FenceId,
+  ) !u32 {
+    return try (
+      self.rasterizer.swapchainAcquireNextImage(
+        self.*, swapchainId, semaphoreId, fenceId
+      )
+    );
+  }
+
+  pub fn queuePresent(
+    self : * @This(),
+    presentInfo : mtr.queue.PresentInfo,
+  ) !void {
+    return try self.rasterizer.queuePresent(self.*, presentInfo);
+  }
+
+  pub fn shouldWindowClose(
+    self : * @This(),
+  ) bool {
+    return self.rasterizer.shouldWindowClose();
+  }
+
+  pub fn pollEvents(
+    self : * @This(),
+  ) void {
+    self.rasterizer.pollEvents();
   }
 
   // -- utils ------------------------------------------------------------------

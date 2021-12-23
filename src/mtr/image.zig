@@ -120,6 +120,7 @@ pub const Layout = enum {
   general,
   transferSrc,
   transferDst,
+  present,
 };
 
 pub const ViewType = enum {

@@ -303,7 +303,9 @@ pub fn stageMemoryToImage(
     );
   }
 
-  mtrCtx.submitCommandBufferToQueue(params.queue, params.commandBuffer);
+  try mtrCtx.submitCommandBufferToQueue(
+    params.queue, params.commandBuffer, .{}
+  );
 }
 
 pub const StageMemoryToBufferParams = struct {
@@ -367,5 +369,7 @@ pub fn stageMemoryToBuffer(
     );
   }
 
-  mtrCtx.submitCommandBufferToQueue(params.queue, params.commandBuffer);
+  try mtrCtx.submitCommandBufferToQueue(
+    params.queue, params.commandBuffer, .{}
+  );
 }

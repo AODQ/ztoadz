@@ -1,7 +1,8 @@
 const mtr = @import("package.zig");
 const std = @import("std");
 
-// pub const SemaphoreId = u64;
+pub const SemaphoreId = u64;
+pub const FenceId = u64;
 
 pub const BufferTape = struct {
   buffer : mtr.buffer.Idx,
@@ -30,6 +31,24 @@ pub const AccessFlags = packed struct {
   indirectCommand : bool = false,
 };
 
-// // semaphores map to Vk1.2 timeline semaphores
-// pub const Semaphore = struct {
-// };
+pub const Semaphore = struct {
+  contextIdx : SemaphoreId,
+};
+
+pub const Fence = struct {
+  signaled : bool = false,
+
+  contextIdx : FenceId = 0,
+};
+
+pub const WaitSemaphoreSynchronization = struct {
+  semaphore : mtr.memory.SemaphoreId,
+  stage : mtr.pipeline.StageFlags,
+};
+
+pub const CommandBufferSynchronization = struct {
+  waitSemaphores : [] WaitSemaphoreSynchronization = (
+    &[_] WaitSemaphoreSynchronization {}
+  ),
+  signalSemaphores : [] mtr.memory.SemaphoreId = &[_] mtr.memory.SemaphoreId {},
+};

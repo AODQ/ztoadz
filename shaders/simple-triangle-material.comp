@@ -81,15 +81,15 @@ vec4 mtEntry(const vec2 uv, const ivec2 dispatchId, const ivec2 viewportDim) {
   if (surface == 0) return vec4(0.0f);
   uint32_t triangleIdU32 = uint32_t(surface & 0xFFFFFFFF);
 
-  /* // gets random triangle ID */
-  /* if (surface > 0) { */
-  /*   return vec4( */
-  /*     hash11(triangleIdU32), */
-  /*     hash11(232+triangleIdU32), */
-  /*     hash11(3729+triangleIdU32), */
-  /*     1.0f */
-  /*   ); */
-  /* } */
+  // gets random triangle ID
+  if (surface > 0) {
+    return vec4(
+      hash11(triangleIdU32),
+      hash11(232+triangleIdU32),
+      hash11(3729+triangleIdU32),
+      1.0f
+    );
+  }
 
   vec4 t0 = intermediaryAttributes[triangleIdU32*6 + 0];
   vec4 t1 = intermediaryAttributes[triangleIdU32*6 + 1];

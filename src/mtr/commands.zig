@@ -13,6 +13,7 @@ pub const ActionType = enum {
   pushConstants,
   transferBufferToImage,
   transferImageToBuffer,
+  transferImageToImage,
   transferMemory,
   uploadTexelToImageMemory,
 
@@ -21,7 +22,7 @@ pub const ActionType = enum {
 
 pub const PipelineBarrier = struct {
   actionType : mtr.command.ActionType = .pipelineBarrier,
-  srcStage : mtr.pipeline.StageFlags,
+  srcStage : mtr.pipeline.StageFlags, // TODO this sould be stageSrc/dst
   dstStage : mtr.pipeline.StageFlags,
   imageTapes : [] ImageTapeAction = &[_] ImageTapeAction {},
   bufferTapes : [] BufferTapeAction = &[_] BufferTapeAction {},
@@ -62,18 +63,22 @@ pub const TransferImageToBuffer = struct {
   // TODO subregions i guess
 };
 
-pub const TransferImage = struct {
-  actionType : mtr.command.ActionType = .transferImage,
+pub const TransferImageToImage = struct {
+  actionType : mtr.command.ActionType = .transferImageToImage,
   imageSrc : mtr.image.Idx,
   imageDst : mtr.image.Idx,
-  srcDimX : u64, srcDimY : u64, srcDimZ : u64,
-  srcArrayLayer : u64, srcMipmap : u64,
 
-  dstOffX : u64, dstOffY : u64, dstOffZ : u64,
-  dstArrayLayer : u64, dstMipmap : u64,
+  srcXOffset : u32 = 0, srcYOffset : u32 = 0, srcZOffset : u32 = 0,
+  dstXOffset : u32 = 0, dstYOffset : u32 = 0, dstZOffset : u32 = 0,
 
-  width : u64, height : u64, depth : u64,
-  layers : u64, mipmaps : u64
+  arrayLayerCount : u32 = 1,
+
+  srcArrayLayerBegin : u32 = 0,
+  dstArrayLayerBegin : u32 = 0,
+  srcMipmapLayer : u32 = 0,
+  dstMipmapLayer : u32 = 0,
+
+  width : u32, height : u32, depth : u32 = 1,
 };
 
 pub const TransferBufferToImage = struct {
@@ -146,6 +151,7 @@ pub const Action = union(ActionType) {
   pushConstants : mtr.command.PushConstants,
   transferBufferToImage : mtr.command.TransferBufferToImage,
   transferImageToBuffer : mtr.command.TransferImageToBuffer,
+  transferImageToImage  : mtr.command.TransferImageToImage,
   transferMemory : mtr.command.TransferMemory,
   uploadTexelToImageMemory : mtr.command.UploadTexelToImageMemory,
 

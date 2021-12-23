@@ -80,6 +80,7 @@ pub const memory     = @import("memory.zig");
 pub const pipeline   = @import("pipeline.zig");
 pub const queue      = @import("queue.zig");
 pub const shader     = @import("shader.zig");
+pub const window     = @import("window.zig");
 pub const util       = @import("util/package.zig");
 
 pub const Context = context.Context;

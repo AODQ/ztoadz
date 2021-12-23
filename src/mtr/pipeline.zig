@@ -29,9 +29,9 @@ pub const RasterizePrimitive = struct {
 };
 
 pub const StageFlags = packed struct {
-  begin : bool = true,
-  compute : bool = true,
-  transfer : bool = true,
-  host : bool = true,
-  end : bool = true,
+  begin : bool = false,
+  compute : bool = false,
+  transfer : bool = false,
+  host : bool = false,
+  end : bool = false,
 };

@@ -32,6 +32,13 @@ pub const WorkType = packed struct {
   render : bool = false,
 };
 
+pub const PresentInfo = struct {
+  queue : mtr.queue.Idx,
+  swapchain : mtr.window.SwapchainId,
+  waitSemaphores : [] mtr.memory.SemaphoreId = &[_] mtr.memory.SemaphoreId {},
+  imageIndex : u32,
+};
+
 // Describes some amount of independent work-flow, such that multiple
 //   queues can work independently of each other with minimal interaction.
 //   commands are buffered into a queue and then acted on when specified

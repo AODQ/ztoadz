@@ -10,15 +10,15 @@ fn compareValues(failStr : anytype, actual : u8, expected : u8,) void {
   }
 }
 
-const imageWidth = 2048;
-const imageHeight = 2048;
+const imageWidth = 1024;
+const imageHeight = 1024;
 
 const tileWidth = 16;
 const tileHeight = 16;
 
 const useMultiDispatchIndirect : bool = true;
 
-pub const log_level = std.log.Level.debug;
+pub const log_level = std.log.Level.info;
 
 pub fn printTime(prepend : [] const u8, timer : std.time.Timer) void {
   const time = timer.read();
@@ -128,7 +128,73 @@ pub const BasicScene = struct {
   numFloatsInScene : u32,
   minBounds : [3] f32 = [3] f32 {9999, 9999, 9999},
   maxBounds : [3] f32 = [3] f32 {-9999, -9999, -9999},
+  cameraOrigin : [3] f32,
 };
+
+pub const BasicSwapchain = struct {
+  swapchain : mtr.window.SwapchainId,
+  images : std.ArrayList(mtr.image.Idx),
+  // imageViews : std.ArrayList(mtr.image.ViewIdx),
+  imageTapes : std.ArrayList(mtr.memory.ImageTape),
+  currentImageIndex : u32,
+
+  imageAvailableSemaphore : mtr.memory.SemaphoreId,
+  renderFinishedSemaphore : mtr.memory.SemaphoreId,
+
+  pub fn deinit(self : * @This()) void {
+    self.images.deinit();
+    // self.imageViews.deinit();
+    self.imageTapes.deinit();
+  }
+};
+
+fn createBasicSwapchain(
+  mtrCtx : * mtr.context.Context,
+  queue : mtr.queue.Idx,
+) !BasicSwapchain {
+  var basicSwapchain = BasicSwapchain {
+    .swapchain = try (
+      mtrCtx.createSwapchain(.{
+          .queue = queue,
+          .extent = [2] u32 { imageWidth, imageHeight },
+      },)
+    ),
+    .images = std.ArrayList(mtr.image.Idx).init(mtrCtx.primitiveAllocator),
+    .imageTapes = (
+      std.ArrayList(mtr.memory.ImageTape).init(mtrCtx.primitiveAllocator)
+    ),
+    //.imageViews = (
+    // std.ArrayList(mtr.image.Idx).init(mtrCtx.primitiveAllocator)
+    //),
+    .currentImageIndex = 0,
+    .imageAvailableSemaphore = try mtrCtx.createSemaphore(),
+    .renderFinishedSemaphore = try mtrCtx.createSemaphore(),
+  };
+
+  try basicSwapchain.images.resize(
+    @intCast(usize, try mtrCtx.swapchainImageCount(basicSwapchain.swapchain))
+  );
+  try mtrCtx.swapchainImages(
+    basicSwapchain.swapchain, basicSwapchain.images.items
+  );
+
+  try basicSwapchain.imageTapes.resize(basicSwapchain.images.items.len);
+  for (basicSwapchain.images.items) |image, idx| {
+    basicSwapchain.imageTapes.items[idx] = (
+      mtr.memory.ImageTape { .image = image, }
+    );
+  }
+
+  // try basicSwapchain.imageViews.resize(basicSwapchain.images.items.len);
+  // for (basicSwapchain.images.items) |image, idx| {
+  //   std.log.info("creating image view for {}", .{image});
+  //   basicSwapchain.imageViews.items[idx] = try (
+  //     mtrCtx.createImageView(.{.image = image})
+  //   );
+  // }
+
+  return basicSwapchain;
+}
 
 pub fn main() !void {
   // rasterizes a simple scene
@@ -150,10 +216,12 @@ pub fn main() !void {
   var timer = try std.time.Timer.start();
 
   var mtrCtx = (
-    mtr.Context.init(
-      debugAllocator.allocator(),
-      mtr.RenderingOptimizationLevel.debug,
-    )
+    mtr.Context.init(.{
+      .allocator = debugAllocator.allocator(),
+      .optimization = mtr.RenderingOptimizationLevel.debug,
+      .width = imageWidth,
+      .height = imageHeight,
+    })
   );
   defer mtrCtx.deinit();
 
@@ -194,6 +262,9 @@ pub fn main() !void {
       },
     })
   );
+
+  var basicSwapchain = try createBasicSwapchain(&mtrCtx, queue);
+  defer basicSwapchain.deinit();
 
   // -- create resources -------------------------------------------------------
   var resources : BasicResources = undefined;
@@ -400,8 +471,9 @@ pub fn main() !void {
 
     { // upload
       const cameraOrigin = [3] f32 {
-        0.0, 0.0, sceneMetadata.maxBounds[2]*1.2
+        0.5, 0.2, sceneMetadata.maxBounds[2]*1.5
       };
+      sceneMetadata.cameraOrigin = cameraOrigin;
 
       try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
         .queue = queue,
@@ -1392,7 +1464,7 @@ pub fn main() !void {
   printTime("created pipeline", timer);
   timer.reset();
 
-  mtrCtx.submitCommandBufferToQueue(queue, commandBufferScratch);
+  try mtrCtx.submitCommandBufferToQueue(queue, commandBufferScratch, .{});
   mtrCtx.queueFlush(queue);
 
   printTime("rendered image", timer);
@@ -1410,5 +1482,120 @@ pub fn main() !void {
     }
   );
 
-  printTime("saved image", timer);
+  printTime("saved image, will now try displaying to screen", timer);
+
+  var frameCount : u32 = 0;
+
+  while (!mtrCtx.shouldWindowClose()) {
+    timer.reset();
+    mtrCtx.pollEvents();
+    basicSwapchain.currentImageIndex = (
+      try mtrCtx.swapchainAcquireNextImage(
+        basicSwapchain.swapchain,
+        basicSwapchain.imageAvailableSemaphore,
+        null,
+      )
+    );
+
+    const currentSwapchainIdx = basicSwapchain.currentImageIndex;
+
+    {
+      var commandBufferRecorder = (
+        mtrCtx.createCommandBufferRecorder(commandBufferScratch)
+      );
+      defer commandBufferRecorder.finish();
+
+      // prepare swapchain to be copied into
+      commandBufferRecorder.append(
+        mtr.command.PipelineBarrier {
+          .srcStage = .{ .begin = true },
+          .dstStage = .{ .transfer = true },
+          .imageTapes = (
+            &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+              .{
+                .tape = (
+                  &basicSwapchain.imageTapes.items[currentSwapchainIdx]
+                ),
+                .layout = .transferDst,
+                .accessFlags = .{ },
+              }, .{
+                .tape = &resources.outputColorImageTape,
+                .layout = .transferSrc,
+                .accessFlags = .{ },
+              },
+            }
+          ),
+        },
+      );
+
+      // copy image into swapchain
+      commandBufferRecorder.append(
+        mtr.command.TransferImageToImage {
+          .imageSrc = resources.outputColorImage,
+          .imageDst = basicSwapchain.images.items[currentSwapchainIdx],
+          .width = imageWidth,
+          .height = imageHeight,
+        },
+      );
+
+      // prepare swapchain for presentation
+      commandBufferRecorder.append(
+        mtr.command.PipelineBarrier {
+          .srcStage = .{ .transfer = true },
+          .dstStage = .{ .end = true },
+          .imageTapes = (
+            &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+              .{
+                .tape = (
+                  &basicSwapchain.imageTapes.items[currentSwapchainIdx]
+                ),
+                .layout = .present,
+                .accessFlags = .{ },
+              },
+            }
+          ),
+        },
+      );
+    }
+
+    try mtrCtx.submitCommandBufferToQueue(
+      queue,
+      commandBufferScratch,
+      .{
+        .waitSemaphores = (
+          &[_] mtr.memory.WaitSemaphoreSynchronization {
+            .{
+              .semaphore = basicSwapchain.imageAvailableSemaphore,
+              .stage = .{.transfer = true,},
+            },
+          }
+        ),
+        .signalSemaphores = (
+          &[_] mtr.memory.SemaphoreId {
+            basicSwapchain.renderFinishedSemaphore,
+          }
+        ),
+      },
+    );
+
+    try mtrCtx.queuePresent(.{
+      .queue = queue,
+      .swapchain = basicSwapchain.swapchain,
+      .imageIndex = currentSwapchainIdx,
+      .waitSemaphores = (
+        &[_] mtr.memory.SemaphoreId { basicSwapchain.renderFinishedSemaphore }
+      ),
+    });
+
+    mtrCtx.queueFlush(queue);
+
+    if (frameCount == 0) {
+      frameCount = 5000;
+      printTime("frame ms", timer);
+    }
+  }
+
+  mtrCtx.queueFlush(queue);
+
+  std.log.info("exitting application", .{});
 }

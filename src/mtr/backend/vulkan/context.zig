@@ -3,7 +3,6 @@ const std = @import("std");
 
 const glfw = @import("glfw.zig");
 const vkDispatcher = @import("vulkan-dispatchers.zig");
-const vkSwapchain = @import("swapchain.zig");
 const vk = @import("../../../bindings/vulkan.zig");
 
 fn zeroInitInPlace(ptr : anytype) void {
@@ -112,6 +111,7 @@ fn imageLayoutToVk(layout : mtr.image.Layout) vk.ImageLayout {
     .general => .general,
     .transferSrc => .transferSrcOptimal,
     .transferDst => .transferDstOptimal,
+    .present => .presentSrcKHR,
   };
 }
 
@@ -267,6 +267,7 @@ const CommandBuffer = struct {
 
 const Image = struct {
   handle : vk.Image,
+  partOfSwapchain : bool,
 };
 
 /// graphics context for a device backing the current application
@@ -634,7 +635,6 @@ pub const Rasterizer = struct {
   // device : c.cl_device_id,
 
   glfwSurface : vk.SurfaceKHR,
-  swapchain : vkSwapchain.VulkanSwapchain,
 
   heaps : std.AutoHashMap(mtr.heap.RegionIdx, Heap),
   heapRegions : std.AutoHashMap(mtr.heap.RegionIdx, vk.DeviceMemory),
@@ -652,6 +652,9 @@ pub const Rasterizer = struct {
     std.AutoHashMap(mtr.descriptor.SetIdx, vk.DescriptorSet)
   ),
   computePipelines : std.AutoHashMap(mtr.pipeline.ComputeIdx, vk.Pipeline),
+  semaphores : std.AutoHashMap(mtr.memory.SemaphoreId, vk.Semaphore),
+  fences : std.AutoHashMap(mtr.memory.FenceId, vk.Fence),
+  swapchains : std.AutoHashMap(mtr.window.SwapchainId, vk.SwapchainKHR),
   pipelineLayouts : std.AutoHashMap(mtr.pipeline.LayoutIdx, vk.PipelineLayout),
   queues : std.AutoHashMap(mtr.queue.Idx, VulkanDeviceQueue),
   commandPools : std.AutoHashMap(mtr.command.PoolIdx, vk.CommandPool),
@@ -664,7 +667,7 @@ pub const Rasterizer = struct {
   vkd : * VulkanDeviceContext, // pointer to device in arraylist
   glfwWindow : * glfw.c.GLFWwindow,
 
-  pub fn init(allocator : std.mem.Allocator) ! @This() {
+  pub fn init(info : mtr.context.Context.CreateInfo) ! @This() {
     const requiredDeviceExtensions = [_][*:0] const u8 {
       vk.extension_info.khrSwapchain.name,
       vk.extension_info.khrDeferredHostOperations.name,
@@ -684,7 +687,7 @@ pub const Rasterizer = struct {
       // .gpuAssistedReserveBindingSlotEXT,
       .debugPrintfEXT,
       .bestPracticesEXT,
-      .synchronizationValidationEXT
+      //.synchronizationValidationEXT
     };
 
     const validationFeatures = vk.ValidationFeaturesEXT {
@@ -700,8 +703,14 @@ pub const Rasterizer = struct {
     }
 
     glfw.c.glfwWindowHint(glfw.c.GLFW_CLIENT_API, glfw.c.GLFW_NO_API);
+    glfw.c.glfwWindowHint(glfw.c.GLFW_FLOATING, @boolToInt(info.floating));
+    glfw.c.glfwWindowHint(glfw.c.GLFW_RESIZABLE, @boolToInt(info.resizable));
     const window = (
-      glfw.c.glfwCreateWindow(640, 480, "zTOADz", null, null)
+      glfw.c.glfwCreateWindow(
+        @intCast(c_int, info.width),
+        @intCast(c_int, info.height),
+        info.windowTitle, null, null,
+      )
     ) orelse return error.GlfwWindowInitFailed;
 
     // then initial vk dispatch loaders
@@ -709,7 +718,9 @@ pub const Rasterizer = struct {
     var vkb = try (
       vkDispatcher.VulkanBaseDispatch.load(glfw.glfwGetInstanceProcAddress)
     );
-    var instance = try constructInstance(vkb, allocator, &validationFeatures);
+    var instance = (
+      try constructInstance(vkb, info.allocator, &validationFeatures)
+    );
     var vki = try (
       vkDispatcher.VulkanInstanceDispatch.load(
         instance, glfw.glfwGetInstanceProcAddress,
@@ -717,7 +728,7 @@ pub const Rasterizer = struct {
     );
     var devices = try (
       constructDevices(
-        allocator,
+        info.allocator,
         vki,
         instance,
         requiredDeviceExtensions[0..],
@@ -730,65 +741,75 @@ pub const Rasterizer = struct {
       == .success
     );
 
-    var swapchain = try (
-      vkSwapchain.VulkanSwapchain.init(
-        allocator, vki, surface, &devices.items[0],
-        vk.Extent2D {
-          .width = 640,
-          .height = 480,
-        },
-      )
-    );
-
     var self = @This() {
       .glfwSurface = surface,
-      .swapchain = swapchain,
-      .allocator = allocator,
-      .heaps = std.AutoHashMap(mtr.heap.RegionIdx, Heap).init(allocator),
+      .allocator = info.allocator,
+      .heaps = std.AutoHashMap(mtr.heap.RegionIdx, Heap).init(info.allocator),
       .heapRegions = (
-        std.AutoHashMap(mtr.heap.RegionIdx, vk.DeviceMemory).init(allocator)
+        std
+          .AutoHashMap(mtr.heap.RegionIdx, vk.DeviceMemory)
+          .init(info.allocator)
       ),
       .buffers = (
-        std.AutoHashMap(mtr.heap.RegionIdx, vk.Buffer).init(allocator)
+        std.AutoHashMap(mtr.heap.RegionIdx, vk.Buffer).init(info.allocator)
       ),
-      .images = std.AutoHashMap(mtr.image.Idx, Image).init(allocator),
+      .images = std.AutoHashMap(mtr.image.Idx, Image).init(info.allocator),
       .imageViews = (
-        std.AutoHashMap(mtr.image.ViewIdx, vk.ImageView).init(allocator)
+        std.AutoHashMap(mtr.image.ViewIdx, vk.ImageView).init(info.allocator)
       ),
       .shaderModules = (
-        std.AutoHashMap(mtr.shader.Idx, vk.ShaderModule).init(allocator)
+        std.AutoHashMap(mtr.shader.Idx, vk.ShaderModule).init(info.allocator)
       ),
       .queues = (
-        std.AutoHashMap(mtr.queue.Idx, VulkanDeviceQueue).init(allocator)
+        std.AutoHashMap(mtr.queue.Idx, VulkanDeviceQueue).init(info.allocator)
       ),
       .descriptorSetLayouts = (
         std
           .AutoHashMap(mtr.descriptor.LayoutIdx, vk.DescriptorSetLayout)
-          .init(allocator)
+          .init(info.allocator)
       ),
       .descriptorSetPools = (
         std
           .AutoHashMap(mtr.descriptor.PoolIdx, vk.DescriptorPool)
-          .init(allocator)
+          .init(info.allocator)
       ),
       .descriptorSets = (
         std
           .AutoHashMap(mtr.descriptor.SetIdx, vk.DescriptorSet)
-          .init(allocator)
+          .init(info.allocator)
       ),
       .computePipelines = (
-        std.AutoHashMap(mtr.pipeline.ComputeIdx, vk.Pipeline).init(allocator)
+        std
+          .AutoHashMap(mtr.pipeline.ComputeIdx, vk.Pipeline)
+          .init(info.allocator)
       ),
       .pipelineLayouts = (
         std
           .AutoHashMap(mtr.pipeline.LayoutIdx, vk.PipelineLayout)
-          .init(allocator)
+          .init(info.allocator)
       ),
       .commandPools = (
-        std.AutoHashMap(mtr.command.PoolIdx, vk.CommandPool).init(allocator)
+        std
+          .AutoHashMap(mtr.command.PoolIdx, vk.CommandPool)
+          .init(info.allocator)
       ),
       .commandBuffers = (
-        std.AutoHashMap(mtr.command.PoolIdx, CommandBuffer).init(allocator)
+        std
+          .AutoHashMap(mtr.command.PoolIdx, CommandBuffer)
+          .init(info.allocator)
+      ),
+      .semaphores = (
+        std
+          .AutoHashMap(mtr.memory.SemaphoreId, vk.Semaphore)
+          .init(info.allocator)
+      ),
+      .fences = (
+        std.AutoHashMap(mtr.memory.FenceId, vk.Fence).init(info.allocator)
+      ),
+      .swapchains = (
+        std
+          .AutoHashMap(mtr.window.SwapchainId, vk.SwapchainKHR)
+          .init(info.allocator)
       ),
       .vkb = vkb,
       .instance = instance,
@@ -808,8 +829,33 @@ pub const Rasterizer = struct {
   }
 
   pub fn deinit(self : * @This()) void {
-    // -- deinit device-related info
-    self.swapchain.deinit();
+
+    var semaphoreIter = self.semaphores.iterator();
+    while (semaphoreIter.next()) |semaphore| {
+      self.vkd.vkdd.destroySemaphore(
+        self.vkd.device,
+        semaphore.value_ptr.*,
+        null
+      );
+    }
+
+    var fenceIter = self.fences.iterator();
+    while (fenceIter.next()) |fence| {
+      self.vkd.vkdd.destroyFence(
+        self.vkd.device,
+        fence.value_ptr.*,
+        null
+      );
+    }
+
+    var swapchainIter = self.swapchains.iterator();
+    while (swapchainIter.next()) |swapchain| {
+      self.vkd.vkdd.destroySwapchainKHR(
+        self.vkd.device,
+        swapchain.value_ptr.*,
+        null
+      );
+    }
 
     var shaderModuleIter = self.shaderModules.iterator();
     while (shaderModuleIter.next()) |shaderModule| {
@@ -860,6 +906,9 @@ pub const Rasterizer = struct {
 
     var imageIter = self.images.iterator();
     while (imageIter.next()) |image| {
+      if (image.value_ptr.*.partOfSwapchain) {
+        continue;
+      }
       self.vkd.vkdd.destroyImage(
         self.vkd.device,
         image.value_ptr.*.handle,
@@ -935,6 +984,9 @@ pub const Rasterizer = struct {
     glfw.c.glfwTerminate();
 
     // destroy local memory
+    self.semaphores.deinit();
+    self.fences.deinit();
+    self.swapchains.deinit();
     self.heaps.deinit();
     self.shaderModules.deinit();
     self.descriptorSetLayouts.deinit();
@@ -1431,7 +1483,7 @@ pub const Rasterizer = struct {
 
     self.images.putNoClobber(
       image.contextIdx,
-      Image { .handle = vkImage, },
+      Image { .handle = vkImage, .partOfSwapchain = false, },
     ) catch unreachable;
   }
 
@@ -1685,6 +1737,53 @@ pub const Rasterizer = struct {
           },
         );
       },
+      .transferImageToImage => |action| {
+        var vkImageSrc = self.images.getPtr(action.imageSrc).?;
+        var vkImageDst = self.images.getPtr(action.imageDst).?;
+
+        self.vkd.vkdd.cmdCopyImage2KHR(
+          vkCommandBuffer,
+          vk.CopyImageInfo2KHR {
+            .srcImage = vkImageSrc.handle,
+            .srcImageLayout = vk.ImageLayout.transferSrcOptimal,
+            .dstImage = vkImageDst.handle,
+            .dstImageLayout = vk.ImageLayout.transferDstOptimal,
+            .regionCount = 1,
+            .pRegions = @ptrCast(
+              [*] const vk.ImageCopy2KHR,
+              &vk.ImageCopy2KHR {
+                .srcSubresource = vk.ImageSubresourceLayers {
+                  .aspectMask = .{ .colorBit = true },
+                  .mipLevel = action.srcMipmapLayer,
+                  .baseArrayLayer = action.srcArrayLayerBegin,
+                  .layerCount = action.arrayLayerCount,
+                },
+                .dstSubresource = vk.ImageSubresourceLayers {
+                  .aspectMask = .{ .colorBit = true },
+                  .mipLevel = action.dstMipmapLayer,
+                  .baseArrayLayer = action.dstArrayLayerBegin,
+                  .layerCount = action.arrayLayerCount,
+                },
+                .srcOffset = vk.Offset3D {
+                  .x = @intCast(i32, action.srcXOffset),
+                  .y = @intCast(i32, action.srcYOffset),
+                  .z = @intCast(i32, action.srcZOffset),
+                },
+                .dstOffset = vk.Offset3D {
+                  .x = @intCast(i32, action.dstXOffset),
+                  .y = @intCast(i32, action.dstYOffset),
+                  .z = @intCast(i32, action.dstZOffset),
+                },
+                .extent = vk.Extent3D {
+                  .width = action.width,
+                  .height = action.height,
+                  .depth = action.depth,
+                },
+              }
+            ),
+          },
+        );
+      },
       .pipelineBarrier => |action| {
         // -- create & copy over image memory barriers
         var imageMemoryBarriers = (
@@ -1840,21 +1939,70 @@ pub const Rasterizer = struct {
 
   pub fn submitCommandBufferToQueue(
     self : * @This(),
-    _ : mtr.Context,
+    mtrCtx : mtr.Context,
     queue : mtr.queue.Primitive,
     commandBuffer : mtr.command.Buffer,
-  ) void {
+    sync : mtr.memory.CommandBufferSynchronization,
+  ) !void {
     var vkQueue = self.queues.get(queue.contextIdx).?;
     var vkCommandBuffer = self.commandBuffers.getPtr(commandBuffer.idx).?;
-    self.vkd.vkdd.queueSubmit(
+
+    // -- map wait semaphores/stages to VK
+    var vkWaitSemaphores = (
+      std.ArrayList(vk.Semaphore).init(mtrCtx.primitiveAllocator)
+    );
+    defer vkWaitSemaphores.deinit();
+    try vkWaitSemaphores.resize(sync.waitSemaphores.len);
+    var vkWaitStages = (
+      std.ArrayList(vk.PipelineStageFlags).init(mtrCtx.primitiveAllocator)
+    );
+    defer vkWaitStages.deinit();
+    try vkWaitStages.resize(sync.waitSemaphores.len);
+    for (sync.waitSemaphores) |wait, idx| {
+      vkWaitSemaphores.items[idx] = self.semaphores.get(wait.semaphore).?;
+      vkWaitStages.items[idx] = stageFlagToVk(wait.stage);
+    }
+
+    var vkWaitSemaphoresPtr : [*] const vk.Semaphore = undefined;
+    if (vkWaitSemaphores.items.len > 0) {
+      vkWaitSemaphoresPtr = (
+        @ptrCast([*] const vk.Semaphore, vkWaitSemaphores.items.ptr)
+      );
+    }
+
+    var vkWaitStagePtr : [*] const vk.PipelineStageFlags = undefined;
+    if (vkWaitStages.items.len > 0) {
+      vkWaitStagePtr = (
+        @ptrCast([*] const vk.PipelineStageFlags, vkWaitStages.items.ptr)
+      );
+    }
+
+    // -- map signal semaphores to VK
+    var vkSignalSemaphores = (
+      std.ArrayList(vk.Semaphore).init(mtrCtx.primitiveAllocator)
+    );
+    defer vkSignalSemaphores.deinit();
+    try vkSignalSemaphores.resize(sync.signalSemaphores.len);
+    for (sync.signalSemaphores) |signalSemaphore, idx| {
+      vkSignalSemaphores.items[idx] = self.semaphores.get(signalSemaphore).?;
+    }
+
+    var vkSignalSemaphoresPtr : [*] const vk.Semaphore = undefined;
+    if (vkSignalSemaphores.items.len > 0) {
+      vkSignalSemaphoresPtr = (
+        @ptrCast([*] const vk.Semaphore, vkSignalSemaphores.items.ptr)
+      );
+    }
+
+    try self.vkd.vkdd.queueSubmit(
       vkQueue.handle,
       1,
       @ptrCast(
         [*] const vk.SubmitInfo,
         & vk.SubmitInfo {
-          .waitSemaphoreCount = 0,
-          .pWaitSemaphores = undefined,
-          .pWaitDstStageMask = undefined,
+          .waitSemaphoreCount = @intCast(u32, vkWaitSemaphores.items.len),
+          .pWaitSemaphores = vkWaitSemaphoresPtr,
+          .pWaitDstStageMask = vkWaitStagePtr,
           .commandBufferCount = 1,
           .pCommandBuffers = (
             @ptrCast(
@@ -1862,12 +2010,12 @@ pub const Rasterizer = struct {
               vkCommandBuffer.buffers.items.ptr
             )
           ),
-          .signalSemaphoreCount = 0,
-          .pSignalSemaphores = undefined,
+          .signalSemaphoreCount = @intCast(u32, vkSignalSemaphores.items.len),
+          .pSignalSemaphores = vkSignalSemaphoresPtr,
         }
       ),
       .null_handle,
-    ) catch unreachable;
+    );
   }
 
   pub fn deviceWaitIdle(
@@ -2102,6 +2250,273 @@ pub const Rasterizer = struct {
       computePipeline.contextIdx,
       vkComputePipeline
     );
+  }
+
+  pub fn createSemaphore(
+    self : * @This(),
+    _ : mtr.Context,
+    semaphore : mtr.memory.Semaphore
+  ) !void {
+    var vkSemaphore : vk.Semaphore = try (
+      self.vkd.vkdd.createSemaphore(
+        self.vkd.device,
+        .{ .flags = .{}, },
+        null,
+      )
+    );
+
+    try self.semaphores.putNoClobber(semaphore.contextIdx, vkSemaphore);
+  }
+
+  pub fn createFence(
+    self : * @This(),
+    _ : mtr.Context,
+    fence : mtr.memory.Fence
+  ) !void {
+    var vkFence : vk.Fence = try (
+      self.vkd.vkdd.createFence(
+        self.vkd.device,
+        .{ .flags = fence.signaled, },
+        null,
+      )
+    );
+
+    try self.fences.putNoClobber(fence.contextIdx, vkFence);
+  }
+
+  pub fn createSwapchain(
+    self : * @This(),
+    _ : mtr.Context,
+    mtrSwapchain : mtr.window.Swapchain,
+  ) !void {
+    const vkQueue = self.queues.getPtr(mtrSwapchain.queue).?;
+    var vkOldSwapchain = self.swapchains.get(mtrSwapchain.oldSwapchain);
+
+    // TODO get this properly
+    var surfaceFormat = vk.SurfaceFormatKHR {
+      .format = vk.Format.b8g8r8a8Unorm,
+      .colorSpace = vk.ColorSpaceKHR.srgbNonlinearKHR,
+    };
+
+    const concurrent = (
+      self.vkd.deviceQueue.gtcIdx != self.vkd.deviceQueue.presentIdx
+    );
+
+    std.debug.assert(
+      (
+        try self.vki.getPhysicalDeviceSurfaceSupportKHR(
+          self.vkd.physicalDevice,
+          vkQueue.familyIndex,
+          self.glfwSurface
+        )
+      ) == vk.TRUE
+    );
+
+    const surfaceCapabilities = try (
+      self.vki.getPhysicalDeviceSurfaceCapabilitiesKHR(
+        self.vkd.physicalDevice,
+        self.glfwSurface,
+      )
+    );
+
+    // fix the extent to capabilities of the surface
+    var actualImageExtent = vk.Extent2D {
+      .width = mtrSwapchain.extent[0],
+      .height = mtrSwapchain.extent[1],
+    };
+
+    actualImageExtent.width = (
+      std.math.clamp(
+        actualImageExtent.width,
+        surfaceCapabilities.minImageExtent.width,
+        surfaceCapabilities.maxImageExtent.width,
+      )
+    );
+
+    actualImageExtent.height = (
+      std.math.clamp(
+        actualImageExtent.height,
+        surfaceCapabilities.minImageExtent.height,
+        surfaceCapabilities.maxImageExtent.height,
+      )
+    );
+
+    var vkSwapchain = try self.vkd.vkdd.createSwapchainKHR(
+      self.vkd.device,
+      .{
+        .flags = .{},
+        .surface = self.glfwSurface,
+        .minImageCount = surfaceCapabilities.minImageCount,
+        .imageFormat = surfaceFormat.format,
+        .imageColorSpace = surfaceFormat.colorSpace,
+        .imageExtent = actualImageExtent,
+        .imageArrayLayers = 1,
+        .imageUsage = .{ .transferDstBit = true,  },
+        .imageSharingMode = if (concurrent) (.concurrent) else (.exclusive),
+        .queueFamilyIndexCount = 1,
+        .pQueueFamilyIndices = @ptrCast([*] const u32, &vkQueue.familyIndex),
+        .preTransform = .{ .identityBitKHR = true, },
+        .compositeAlpha = .{ .opaqueBitKHR = true },
+        .presentMode = .immediateKHR,
+        .clipped = vk.TRUE,
+        .oldSwapchain = (
+          if (vkOldSwapchain != null) (vkOldSwapchain.?) else (.null_handle)
+        ),
+      },
+      null,
+    );
+
+    try self.swapchains.putNoClobber(mtrSwapchain.contextIdx, vkSwapchain);
+  }
+
+  pub fn swapchainImageCount(
+    self : * @This(),
+    _ : mtr.Context,
+    swapchainId : mtr.window.SwapchainId,
+  ) !u32 {
+    const vkSwapchain = self.swapchains.get(swapchainId).?;
+    var swapchainImagesCount : u32 = 0;
+    _ = try self.vkd.vkdd.getSwapchainImagesKHR(
+      self.vkd.device,
+      vkSwapchain,
+      &swapchainImagesCount,
+      null
+    );
+    return swapchainImagesCount;
+  }
+
+  pub fn swapchainImages(
+    self : * @This(),
+    mtrCtx : * mtr.Context,
+    swapchainId : mtr.window.SwapchainId,
+    images : [] mtr.image.Idx,
+  ) !void {
+    // TODO i think we have to map vulkan image IDs to mtr IDs to prevent
+    //      duplicates if this function is called multiple times
+    const vkSwapchain = self.swapchains.get(swapchainId).?;
+    var vkImages = std.ArrayList(vk.Image).init(mtrCtx.primitiveAllocator);
+    try vkImages.resize(images.len);
+    defer vkImages.deinit();
+
+    var swapchainImagesCount = @intCast(u32, images.len);
+
+    _ = try self.vkd.vkdd.getSwapchainImagesKHR(
+      self.vkd.device,
+      vkSwapchain,
+      &swapchainImagesCount,
+      @ptrCast([*] vk.Image, vkImages.items.ptr),
+    );
+
+    for (vkImages.items) |vkImage, it| {
+      // update our internals to track these images, though they can't be
+      // deallocated on our side
+      // TODO fill out information for MTR if possible (maybe from swapchain)
+      const prevIdx = mtrCtx.allocIdx;
+      mtrCtx.allocIdx += 1;
+      try mtrCtx.images.putNoClobber(
+        prevIdx,
+        mtr.image.Primitive {
+          .allocatedHeapRegion = 0,
+          .label = "swapchain-image-N",
+          .offset = 0,
+          .width = 0, .height = 0, .depth = 0,
+          .samplesPerTexel = .s1,
+          .arrayLayers = 1,
+          .mipmapLevels = 1,
+          .byteFormat = .uint8,
+          .channels = .RGB,
+          .usage = .{ .transferDst = true },
+          .normalized = true,
+          .queueSharing = .exclusive,
+          .contextIdx = prevIdx,
+        }
+      );
+
+      try self.images.putNoClobber(
+        prevIdx,
+        Image { .handle = vkImage, .partOfSwapchain = true },
+      );
+
+      images[it] = prevIdx;
+    }
+  }
+
+  pub fn swapchainAcquireNextImage(
+    self : * @This(),
+    _ : mtr.Context,
+    swapchainId : mtr.window.SwapchainId,
+    semaphoreId : ? mtr.memory.SemaphoreId,
+    fenceId     : ? mtr.memory.FenceId,
+  ) !u32 {
+    const vkSwapchain = self.swapchains.get(swapchainId).?;
+    var vkSemaphore : vk.Semaphore = .null_handle;
+    var vkFence     : vk.Fence    = .null_handle;
+
+    if (semaphoreId != null) {
+      vkSemaphore = self.semaphores.get(semaphoreId.?).?;
+    }
+
+    if (fenceId != null) {
+      vkFence = self.fences.get(fenceId.?).?;
+    }
+
+    return (
+      try self.vkd.vkdd.acquireNextImageKHR(
+        self.vkd.device,
+        vkSwapchain,
+        1<<32, // ~4 seconds
+        vkSemaphore,
+        vkFence,
+      )
+    ).imageIndex;
+  }
+
+  pub fn queuePresent(
+    self : * @This(),
+    mtrCtx : mtr.Context,
+    presentInfo : mtr.queue.PresentInfo,
+  ) !void {
+    const vkQueue = self.queues.getPtr(presentInfo.queue).?;
+    const vkSwapchain = self.swapchains.get(presentInfo.swapchain).?;
+
+    var vkWaitSemaphores = (
+      std.ArrayList(vk.Semaphore).init(mtrCtx.primitiveAllocator)
+    );
+    defer vkWaitSemaphores.deinit();
+    try vkWaitSemaphores.resize(presentInfo.waitSemaphores.len);
+    for (presentInfo.waitSemaphores) |waitSemaphore, idx| {
+      vkWaitSemaphores.items[idx] = self.semaphores.get(waitSemaphore).?;
+    }
+
+    var vkWaitSemaphoresPtr : [*] const vk.Semaphore = undefined;
+    if (vkWaitSemaphores.items.len > 0) {
+      vkWaitSemaphoresPtr = (
+        @ptrCast([*] const vk.Semaphore, vkWaitSemaphores.items.ptr)
+      );
+    }
+
+    _ = try self.vkd.vkdd.queuePresentKHR(
+      vkQueue.handle,
+      vk.PresentInfoKHR {
+        .waitSemaphoreCount = @intCast(u32, vkWaitSemaphores.items.len),
+        .pWaitSemaphores = vkWaitSemaphoresPtr,
+        .swapchainCount = 1,
+        .pSwapchains = @ptrCast([*] const vk.SwapchainKHR, &vkSwapchain),
+        .pImageIndices = @ptrCast([*] const u32, &presentInfo.imageIndex),
+        .pResults = null,
+      },
+    );
+  }
+
+
+  // TODO maybe I should pull GLFW out bc this shouldn't be here
+
+  pub fn shouldWindowClose(self : *@This()) bool {
+    return glfw.c.glfwWindowShouldClose(self.glfwWindow) > 0;
+  }
+
+  pub fn pollEvents(_ : * @This()) void {
+    glfw.c.glfwPollEvents();
   }
 
   // -- utils ------------------------------------------------------------------

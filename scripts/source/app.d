@@ -48,7 +48,7 @@ mixin Main.parseCLIArgs!(Arguments, (args) {
       toUTFz!(char*)(args.inputFilename),
       aiProcess_Triangulate
     | aiProcess_PreTransformVertices
-    //| aiProcess_GenUVCoords
+    | aiProcess_GenUVCoords
     )
   );
   if (!scene) {

@@ -1,8 +1,8 @@
 zig-cache/
 models/
-test.ppm
 zig-out/
 zig-cache/
 zig-out/
 *.png
+*.ppm
 *.spv

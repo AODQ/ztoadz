@@ -84,7 +84,9 @@ pub fn storeImageToFile(
     );
   }
 
-  mtrCtx.submitCommandBufferToQueue(params.queue, params.commandBuffer);
+  try mtrCtx.submitCommandBufferToQueue(
+    params.queue, params.commandBuffer, .{}
+  );
   // TODO replace with fence
   mtrCtx.queueFlush(params.queue);
 
