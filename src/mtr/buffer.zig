@@ -7,6 +7,7 @@ pub const ConstructInfo = struct {
   offset : u64, length : u64,
   usage : mtr.buffer.Usage,
   queueSharing : mtr.queue.SharingUsage,
+  label : [:0] const u8,
 };
 
 // describes in what contexts the buffer may be accessed for both reading &
@@ -39,6 +40,7 @@ pub const Primitive = struct {
   length : u64,
   usage : mtr.buffer.Usage,
   queueSharing : mtr.queue.SharingUsage,
+  label : [:0] const u8,
   contextIdx : mtr.buffer.Idx,
 
   pub fn jsonStringify(

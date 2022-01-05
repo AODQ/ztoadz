@@ -6,7 +6,7 @@ pub const ViewIdx = u64;
 
 pub const ConstructInfo = struct {
   offset : u64, // TODO change for buffer/image 'offset' -> 'offsetIntoHeap'
-  label : [] const u8,
+  label : [:0] const u8,
   width : u32, height : u32, depth : u32,
   samplesPerTexel : mtr.image.Sample,
   arrayLayers : u32,
@@ -69,7 +69,7 @@ pub const ImageUsageFlags = packed struct {
 
 pub const Primitive = struct {
   allocatedHeapRegion : mtr.heap.RegionIdx,
-  label : [] const u8,
+  label : [:0] const u8,
   offset : u64, // TODO change for buffer/image 'offset' -> 'offsetIntoHeap'
   width : u32, height : u32, depth : u32,
   samplesPerTexel : mtr.image.Sample,
@@ -80,6 +80,7 @@ pub const Primitive = struct {
   normalized : bool,
   usage : ImageUsageFlags = {},
   queueSharing : mtr.queue.SharingUsage,
+
   contextIdx : mtr.image.Idx,
   // TODO maybe usage flags? (transfer src/dst)
 
@@ -134,6 +135,7 @@ pub const ViewCreateInfo = struct {
   mipmapLayerCount : u32 = 1,
   arrayLayerBegin : u32 = 0,
   arrayLayerCount : u32 = 1,
+  label : [:0] const u8,
 };
 
 pub const View = struct {
@@ -143,6 +145,7 @@ pub const View = struct {
   mipmapLayerCount : u32,
   arrayLayerBegin : u32,
   arrayLayerCount : u32,
+  label : [:0] const u8,
 
   contextIdx : ViewIdx,
 };

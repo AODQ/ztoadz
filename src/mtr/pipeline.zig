@@ -10,14 +10,16 @@ pub const LayoutIdx = u64;
 pub const Layout = struct {
   descriptorSetLayouts : [] const mtr.descriptor.LayoutIdx,
   pushConstantRange : u32 = 0,
+  label : [:0] const u8,
 
   contextIdx : LayoutIdx = 0,
 };
 
 pub const Compute = struct {
   shaderModule : mtr.shader.Idx,
-  pName : [*:0] const u8,
+  entryFnLabel : [*:0] const u8,
   layout : mtr.pipeline.LayoutIdx,
+  label : [:0] const u8,
 
   contextIdx : LayoutIdx = 0,
 };
@@ -34,4 +36,5 @@ pub const StageFlags = packed struct {
   transfer : bool = false,
   host : bool = false,
   end : bool = false,
+  indirectDispatch : bool = false,
 };

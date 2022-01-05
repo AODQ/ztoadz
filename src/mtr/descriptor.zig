@@ -45,12 +45,14 @@ pub const SetPoolCreateInfo = struct {
   frequency : Frequency,
   maxSets : u32,
   descriptorSizes : SetPoolSizes,
+  label : [:0] const u8,
 };
 
 pub const SetPool = struct {
   frequency : Frequency,
   maxSets : u32,
   descriptorSizes : SetPoolSizes,
+  label : [:0] const u8,
   contextIdx : mtr.descriptor.PoolIdx,
 };
 
@@ -63,6 +65,7 @@ pub const SetLayoutBinding = struct {
 pub const SetLayoutConstructInfo = struct {
   frequency : mtr.descriptor.Frequency,
   bindings : [] const SetLayoutBinding,
+  label : [:0] const u8,
   pool : PoolIdx,
 };
 
@@ -73,6 +76,7 @@ pub const SetLayout = struct {
   bindingIdxToLayoutBinding : (
     std.AutoHashMap(u32, SetLayoutBinding)
   ),
+  label : [:0] const u8,
   frequency : Frequency,
   pool : PoolIdx,
 
@@ -84,6 +88,7 @@ pub const SetLayout = struct {
     contextIdx : LayoutIdx,
   ) @This() {
     var self = @This() {
+      .label = ci.label,
       .bindings = (
         std.AutoHashMap(
           Type, std.ArrayList(SetLayoutBinding)

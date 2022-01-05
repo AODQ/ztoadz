@@ -214,7 +214,7 @@ pub fn loadContextFromSnapshot(
   //   // TODO this has to be looped over 10MBs
   //   var mappedMemory : ? [*] u8 = null;
   //   {
-  //     mtrCtx.beginCommandBufferWriting(mtrCtx.utilCommandBuffer);
+  //     try mtrCtx.beginCommandBufferWriting(mtrCtx.utilCommandBuffer);
   //     defer mtrCtx.endCommandBufferWriting();
 
   //     try mtrCtx.enqueueToCommandBuffer(
@@ -242,7 +242,7 @@ pub fn loadContextFromSnapshot(
 
   //   // copy buffer
   //   {
-  //     mtrCtx.beginCommandBufferWriting(mtrCtx.utilCommandBuffer);
+  //     try mtrCtx.beginCommandBufferWriting(mtrCtx.utilCommandBuffer);
   //     defer mtrCtx.endCommandBufferWriting();
 
   //     try mtrCtx.enqueueToCommandBuffer(

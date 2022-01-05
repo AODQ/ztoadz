@@ -67,8 +67,8 @@ mat4 LookAt(vec3 eye, vec3 center, vec3 up) {
 
 mat4 defaultPerspective() {
   return mat4(
-    0.5f, 0.0f, 0.0f, 0.0f,
-    0.0f, 0.5f, 0.0f, 0.0f,
+    1.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 1.0f, 0.0f, 0.0f,
     0.0f, 0.0f, 1.0f, 0.0f,
     0.0f, 0.0f, 0.5f, 1.0f
   );

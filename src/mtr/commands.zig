@@ -28,14 +28,20 @@ pub const PipelineBarrier = struct {
   bufferTapes : [] BufferTapeAction = &[_] BufferTapeAction {},
 
   pub const ImageTapeAction = struct {
-    tape : * mtr.memory.ImageTape,
+    image : mtr.image.Idx,
     layout : mtr.image.Layout,
     accessFlags : mtr.memory.AccessFlags,
+
+    // below will be filled out by the command recorder
+    tape : ? * mtr.memory.ImageTape = null,
   };
 
   pub const BufferTapeAction = struct {
-    tape : * mtr.memory.BufferTape,
+    buffer : mtr.buffer.Idx,
     accessFlags : mtr.memory.AccessFlags,
+
+    // below will be filled out by the command recorder
+    tape : ? * mtr.memory.BufferTape = null,
   };
 };
 
@@ -98,15 +104,18 @@ pub const imageRangeEnd : i64 = -1;
 // uploads a single texel to image memory, copying it to the entire specified
 //   sub-region
 pub const UploadTexelToImageMemory = struct {
-  // TODO vectors duh
+  // TODO vectors
   actionType : mtr.command.ActionType = .uploadTexelToImageMemory,
-  imageTape : mtr.memory.ImageTape,
+  image : mtr.image.Idx,
   rgba : [4] f32,
   dimXBegin : i64 = 0, dimXEnd : i64 = imageRangeEnd,
   dimYBegin : i64 = 0, dimYEnd : i64 = imageRangeEnd,
   dimZBegin : i64 = 0, dimZEnd : i64 = imageRangeEnd,
   arrayLayerBegin : i64 = 0, arrayLayerEnd : i64 = imageRangeEnd,
   mipmapLevelBegin : i64 = 0, mipmapLevelEnd : i64 = imageRangeEnd,
+
+  // below will be filled out by the command recorder
+  imageTape : ? * mtr.memory.ImageTape = null,
 };
 
 pub const BindPipeline = struct {
@@ -187,12 +196,14 @@ pub const PoolFlag = packed struct {
 pub const PoolConstructInfo = struct {
   flags : mtr.command.PoolFlag,
   queue : mtr.queue.Idx,
+  label : [:0] const u8,
 };
 
 pub const Pool = struct {
   flags : mtr.command.PoolFlag,
   commandBuffers : std.AutoHashMap(mtr.buffer.Idx, mtr.command.Buffer),
   queue : mtr.queue.Idx,
+  label : [:0] const u8,
   contextIdx : mtr.command.PoolIdx,
 
   pub fn deinit(self : * @This()) void {
@@ -236,6 +247,7 @@ pub const Pool = struct {
 };
 
 pub const BufferConstructInfo = struct {
+  label : [:0] const u8,
   commandPool : mtr.command.PoolIdx,
   // assume only primary for now
 };
@@ -243,6 +255,7 @@ pub const BufferConstructInfo = struct {
 pub const Buffer = struct {
   commandPool : mtr.command.PoolIdx,
   commandRecordings : std.ArrayList(mtr.command.Action),
+  label : [:0] const u8,
   idx : u64,
 
   pub fn init(alloc : std.mem.Allocator) @This() {

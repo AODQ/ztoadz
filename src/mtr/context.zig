@@ -145,7 +145,7 @@ pub const Context = struct {
 
   pub fn deinit(self : * @This()) void {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
-    self.rasterizer.deviceWaitIdle();
+    self.rasterizer.deviceWaitIdle() catch unreachable;
 
     var queueIterator = self.queues.iterator();
     while (queueIterator.next()) |queue| {
@@ -223,7 +223,7 @@ pub const Context = struct {
 
     // // TODO , I just assume that the image will fit inside the buffer
     // {
-    //   self.beginCommandBufferWriting(self.utilCommandBuffer);
+    //   try self.beginCommandBufferWriting(self.utilCommandBuffer);
     //   defer self.endCommandBufferWriting(self.utilCommandBuffer);
 
     //   self.enqueueToCommandBuffer(
@@ -243,7 +243,7 @@ pub const Context = struct {
 
     // var mappedMemory : ? [*] u8 = null;
     // {
-    //   self.beginCommandBufferWriting(self.utilCommandBuffer);
+    //   try self.beginCommandBufferWriting(self.utilCommandBuffer);
     //   defer self.endCommandBufferWriting(self.utilCommandBuffer);
 
     //   self.enqueueToCommandBuffer(
@@ -286,7 +286,7 @@ pub const Context = struct {
 
     // // TODO , I just assume that the src buffer will fit inside the dst buffer
     // {
-    //   self.beginCommandBufferWriting(self.utilCommandBuffer);
+    //   try self.beginCommandBufferWriting(self.utilCommandBuffer);
     //   defer self.endCommandBufferWriting(self.utilCommandBuffer);
 
     //   self.enqueueToCommandBuffer(
@@ -308,7 +308,7 @@ pub const Context = struct {
 
     // var mappedMemory : ? [*] u8 = null;
     // {
-    //   self.beginCommandBufferWriting(self.utilCommandBuffer);
+    //   try self.beginCommandBufferWriting(self.utilCommandBuffer);
     //   defer self.endCommandBufferWriting(self.utilCommandBuffer);
 
     //   self.enqueueToCommandBuffer(
@@ -432,7 +432,7 @@ pub const Context = struct {
       .contextIdx = idx,
     };
 
-    self.rasterizer.createHeapFromMemoryRequirements(
+    try self.rasterizer.createHeapFromMemoryRequirements(
       self.*, heap, memoryRequirements,
     );
 
@@ -460,7 +460,7 @@ pub const Context = struct {
     //   length
     // TODO assert NO overlap with other heap regions in debug mode
 
-    self.rasterizer.createHeapRegion(self.*, heapRegion);
+    try self.rasterizer.createHeapRegion(self.*, heapRegion);
 
     try self.heapRegions.putNoClobber(idx, heapRegion);
 
@@ -520,12 +520,13 @@ pub const Context = struct {
       .length = ci.length,
       .usage = ci.usage,
       .queueSharing = ci.queueSharing,
+      .label = ci.label,
       .contextIdx = idx,
     };
 
     // TODO assert NO overlap with other buffers/images in debug mode
 
-    self.rasterizer.createBuffer(self.*, buffer);
+    try self.rasterizer.createBuffer(self.*, buffer);
 
     try self.buffers.putNoClobber(idx, buffer);
 
@@ -572,7 +573,7 @@ pub const Context = struct {
       .contextIdx = idx,
     };
 
-    self.rasterizer.createImage(self.*, image);
+    try self.rasterizer.createImage(self.*, image);
 
     try self.images.putNoClobber(idx, image);
 
@@ -601,6 +602,7 @@ pub const Context = struct {
       .mipmapLayerCount = ci.mipmapLayerCount,
       .arrayLayerBegin = ci.arrayLayerBegin,
       .arrayLayerCount = ci.arrayLayerCount,
+      .label = ci.label,
       .contextIdx = idx,
     };
 
@@ -648,10 +650,11 @@ pub const Context = struct {
         std.AutoHashMap(mtr.command.BufferIdx, mtr.command.Buffer)
           .init(self.primitiveAllocator)
       ),
+      .label = ci.label,
       .contextIdx = idx,
     };
 
-    self.rasterizer.createCommandPool(self.*, pool);
+    try self.rasterizer.createCommandPool(self.*, pool);
 
     try self.commandPools.putNoClobber(idx, pool);
 
@@ -668,7 +671,7 @@ pub const Context = struct {
     return self.constructCommandPoolWithId(ci, prevIdx);
   }
 
-  fn constructCommandBufferWithId(
+  fn createCommandBufferWithId(
     self : * @This(),
     ci : mtr.command.BufferConstructInfo,
     id : u64,
@@ -679,10 +682,11 @@ pub const Context = struct {
       .commandRecordings = (
         std.ArrayList(mtr.command.Action).init(self.primitiveAllocator)
       ),
+      .label = ci.label,
       .idx = id,
     };
 
-    self.rasterizer.createCommandBuffer(self.*, commandBuffer);
+    try self.rasterizer.createCommandBuffer(self.*, commandBuffer);
 
     var commandPool = self.commandPools.getPtr(commandBuffer.commandPool).?;
     try (
@@ -698,14 +702,14 @@ pub const Context = struct {
     return id;
   }
 
-  pub fn constructCommandBuffer(
+  pub fn createCommandBuffer(
     self : * @This(),
     ci : mtr.command.BufferConstructInfo,
   ) !mtr.command.BufferIdx {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
-    return self.constructCommandBufferWithId(ci, prevIdx);
+    return self.createCommandBufferWithId(ci, prevIdx);
   }
 
   pub fn constructQueueWithId(
@@ -719,7 +723,7 @@ pub const Context = struct {
       .contextIdx = idx,
     };
 
-    self.rasterizer.createQueue(self.*, queue);
+    try self.rasterizer.createQueue(self.*, queue);
 
     try self.queues.putNoClobber(idx, queue);
 
@@ -776,13 +780,13 @@ pub const Context = struct {
   pub fn beginCommandBufferWriting(
     self : * @This(),
     commandBufferIdx : mtr.command.BufferIdx,
-  ) void {
+  ) !void {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const commandPair = self.getCommandBufferFromId(commandBufferIdx);
     var commandPool = commandPair.pool;
     var commandBuffer = commandPair.buffer;
 
-    self.rasterizer.beginCommandBufferWriting(self.*, commandBufferIdx);
+    try self.rasterizer.beginCommandBufferWriting(self.*, commandBufferIdx);
 
     if (
           !commandPool.flags.resetCommandBuffer
@@ -811,7 +815,7 @@ pub const Context = struct {
     self : @This(),
     commandBufferIdx : mtr.command.BufferIdx,
     command : anytype,
-  ) void {
+  ) !void {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var action : mtr.command.Action = undefined;
     if (@TypeOf(command) == mtr.command.TransferMemory) {
@@ -845,9 +849,11 @@ pub const Context = struct {
       catch unreachable
     ).* = action;
 
-    self
-      .rasterizer
-      .enqueueToCommandBuffer(self, commandBufferIdx, action);
+    try (
+      self
+        .rasterizer
+        .enqueueToCommandBuffer(self, commandBufferIdx, action)
+    );
   }
 
   pub fn submitCommandBufferToQueue(
@@ -867,12 +873,12 @@ pub const Context = struct {
     );
   }
 
-  pub fn queueFlush(self : @This(), queueIdx : mtr.queue.Idx) void {
+  pub fn queueFlush(self : @This(), queueIdx : mtr.queue.Idx) !void {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     var queue : ? * mtr.queue.Primitive = self.queues.getPtr(queueIdx);
     std.debug.assert(queue != null);
 
-    self.rasterizer.queueFlush(self, queue.?.*);
+    try self.rasterizer.queueFlush(self, queue.?.*);
   }
 
   pub fn mapMemory(
@@ -942,6 +948,7 @@ pub const Context = struct {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const shaderModule = mtr.shader.Module {
       .data = ci.data,
+      .label = ci.label,
       .contextIdx = idx,
     };
     // TODO assert NO overlap
@@ -972,6 +979,7 @@ pub const Context = struct {
       .frequency = ci.frequency,
       .maxSets = ci.maxSets,
       .descriptorSizes = ci.descriptorSizes,
+      .label = ci.label,
       .contextIdx = id,
     };
     try self.descriptorSetPools.putNoClobber(id, descriptorSetPool);
@@ -1020,9 +1028,10 @@ pub const Context = struct {
     id : u64
   ) !mtr.descriptor.LayoutIdx {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
-    const setLayout = (
+    var setLayout = (
       mtr.descriptor.SetLayout.init(self.primitiveAllocator, ci, id)
     );
+    setLayout.label = ci.label;
 
     try self.descriptorSetLayouts.putNoClobber(id, setLayout);
     try self.rasterizer.createDescriptorSetLayout(self.*, setLayout);
@@ -1098,10 +1107,13 @@ pub const Context = struct {
 
   pub fn createSemaphoreWithId(
     self : * @This(),
+    ci : mtr.memory.Semaphore,
     idx : mtr.memory.SemaphoreId,
   ) !mtr.memory.SemaphoreId {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
-    var semaphore = mtr.memory.Semaphore { .contextIdx = idx, };
+    var semaphore = (
+      mtr.memory.Semaphore { .label = ci.label, .contextIdx = idx, }
+    );
     try self.rasterizer.createSemaphore(self.*, semaphore);
     try self.semaphores.putNoClobber(idx, semaphore);
     return idx;
@@ -1109,11 +1121,12 @@ pub const Context = struct {
 
   pub fn createSemaphore(
     self : * @This(),
+    ci : mtr.memory.Semaphore,
   ) !mtr.memory.SemaphoreId {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     const prevIdx = self.allocIdx;
     self.allocIdx += 1;
-    return try self.createSemaphoreWithId(prevIdx);
+    return try self.createSemaphoreWithId(ci, prevIdx);
   }
 
   pub fn createFenceWithId(
@@ -1122,9 +1135,11 @@ pub const Context = struct {
     idx : mtr.memory.FenceId,
   ) !mtr.memory.FenceId {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
-    ci.contextIdx = idx;
-    try self.rasterizer.createFence(self.*, ci);
-    try self.fences.putNoClobber(idx, ci);
+    var mtrFence = ci;
+    mtrFence.contextIdx = idx;
+    mtrFence.label = ci.label;
+    try self.rasterizer.createFence(self.*, mtrFence);
+    try self.fences.putNoClobber(idx, mtrFence);
     return idx;
   }
   pub fn createFence(
@@ -1213,13 +1228,5 @@ pub const Context = struct {
   ) mtr.util.HeapRegionAllocator {
     std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
     return mtr.util.HeapRegionAllocator.init(self, visibility);
-  }
-
-  pub fn createCommandBufferRecorder(
-    self : * @This(),
-    commandBuffer : mtr.command.BufferIdx,
-  ) mtr.util.CommandBufferRecorder {
-    std.log.debug("{s}{s}", .{"mtr -- ", @src().fn_name});
-    return mtr.util.CommandBufferRecorder.init(self, commandBuffer);
   }
 };

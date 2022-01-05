@@ -2,6 +2,7 @@ const mtr = @import("../../package.zig");
 const std = @import("std");
 
 const glfw = @import("glfw.zig");
+const util = @import("util.zig");
 const vkDispatcher = @import("vulkan-dispatchers.zig");
 const vk = @import("../../../bindings/vulkan.zig");
 
@@ -13,8 +14,8 @@ fn zeroInitInPlace(ptr : anytype) void {
 // the head needs to be freed with `freeVkFeatureList`
 pub fn enableVkFeatureList(
   features : anytype,
-) !?*c_void {
-  var currentPNext : ?* c_void = null;
+) !?*anyopaque {
+  var currentPNext : ?* anyopaque = null;
   switch (@typeInfo(@TypeOf(features))) {
     .Struct => |structType| {
       inline for (structType.fields) |field| {
@@ -38,9 +39,9 @@ pub fn enableVkFeatureList(
 }
 
 pub fn freeVkFeatureList(
-  featureListHead : ?* c_void,
+  featureListHead : ?* anyopaque,
 ) void {
-  var currentPNext : ?* c_void = featureListHead;
+  var currentPNext : ?* anyopaque = featureListHead;
   while (currentPNext != null) {
     // just assume it's something (doesn't matter) and grab pNext
     var nextPNext = (
@@ -122,8 +123,8 @@ fn accessFlagsToVk(flags : mtr.memory.AccessFlags) vk.AccessFlags {
     .uniformReadBit = flags.uniformRead,
     .colorAttachmentReadBit = flags.colorAttachmentRead,
     .colorAttachmentWriteBit = flags.colorAttachmentWrite,
-    .transferReadBit = flags.transferRead,
-    .transferWriteBit = flags.transferWrite,
+    .transferReadBit = flags.transferDst,
+    .transferWriteBit = flags.transferSrc,
     .hostReadBit = flags.hostRead,
     .hostWriteBit = flags.hostWrite,
     .indirectCommandReadBit = flags.indirectCommand,
@@ -137,6 +138,7 @@ fn stageFlagToVk(flags : mtr.pipeline.StageFlags) vk.PipelineStageFlags {
     .computeShaderBit = flags.compute,
     .transferBit = flags.transfer,
     .hostBit = flags.host,
+    .drawIndirectBit = flags.indirectDispatch,
   };
 }
 
@@ -218,7 +220,7 @@ fn heapVisibilityToVkMemory(
 //      c.clGetProgramBuildInfo(
 //        program, device,
 //        c.CL_PROGRAM_BUILD_LOG,
-//        length, @ptrCast(* c_void, &buildLog[0]), null,
+//        length, @ptrCast(* anyopaque, &buildLog[0]), null,
 //      )
 //    );
 //    std.log.info("{s}", .{buildLog});
@@ -501,7 +503,7 @@ pub const VulkanDeviceContext = struct {
 fn constructInstance(
   vkb : vkDispatcher.VulkanBaseDispatch,
   allocator : std.mem.Allocator,
-  instanceCreatePNext : * const c_void,
+  instanceCreatePNext : * const anyopaque,
 ) !vk.Instance {
   const appInfo = vk.ApplicationInfo {
     .pApplicationName = "zTOADz",
@@ -530,8 +532,9 @@ fn constructInstance(
   }
 
   // add our own extensions
-  const debugReportInstanceExt : [*:0] const u8 = "VK_EXT_debug_utils";
-  (try instanceExtensions.addOne()).* = debugReportInstanceExt;
+  (try instanceExtensions.addOne()).* = (
+    vk.extension_info.extDebugUtils.name
+  );
 
   // -- create instance
   var layers = [_][*:0] const u8 {
@@ -547,7 +550,7 @@ fn constructInstance(
     .ppEnabledExtensionNames = (
       @ptrCast([*] const [*:0] const u8, instanceExtensions.items)
     ),
-    .pNext = @ptrCast(* const c_void, instanceCreatePNext),
+    .pNext = @ptrCast(* const anyopaque, instanceCreatePNext),
   };
 
   return try vkb.createInstance(instanceCreateInfo, null);
@@ -667,6 +670,21 @@ pub const Rasterizer = struct {
   vkd : * VulkanDeviceContext, // pointer to device in arraylist
   glfwWindow : * glfw.c.GLFWwindow,
 
+  pub fn labelObject(
+    self : * @This(),
+    label : [:0] const u8,
+    object : anytype,
+  ) !void {
+    try self.vkd.vkdd.setDebugUtilsObjectNameEXT(
+      self.vkd.device,
+      vk.DebugUtilsObjectNameInfoEXT {
+        .objectType = util.getObjectType(object),
+        .objectHandle = @bitCast(u64, object),
+        .pObjectName = label,
+      },
+    );
+  }
+
   pub fn init(info : mtr.context.Context.CreateInfo) ! @This() {
     const requiredDeviceExtensions = [_][*:0] const u8 {
       vk.extension_info.khrSwapchain.name,
@@ -686,7 +704,7 @@ pub const Rasterizer = struct {
       // .gpuAssistedEXT,
       // .gpuAssistedReserveBindingSlotEXT,
       .debugPrintfEXT,
-      .bestPracticesEXT,
+      // .bestPracticesEXT,
       //.synchronizationValidationEXT
     };
 
@@ -1029,6 +1047,8 @@ pub const Rasterizer = struct {
       }
     );
 
+    try self.labelObject(shaderModule.label, vkShaderModule);
+
     try self.shaderModules.putNoClobber(shaderModule.contextIdx, vkShaderModule);
   }
 
@@ -1097,6 +1117,8 @@ pub const Rasterizer = struct {
         null,
       )
     );
+
+    try self.labelObject(setLayout.label, vkDescriptorSetLayout);
 
     try self.descriptorSetLayouts.putNoClobber(
       setLayout.contextIdx,
@@ -1178,6 +1200,8 @@ pub const Rasterizer = struct {
       )
     );
 
+    try self.labelObject(descriptorSetPool.label, vkDescriptorSetPool);
+
     try self.descriptorSetPools.putNoClobber(
       descriptorSetPool.contextIdx,
       vkDescriptorSetPool
@@ -1188,7 +1212,7 @@ pub const Rasterizer = struct {
     self : * @This(),
     _ : mtr.Context,
     queue : mtr.queue.Primitive
-  ) void {
+  ) !void {
     var numQueues = (
         @intCast(i32, @boolToInt(queue.workType.transfer))
       + @intCast(i32, @boolToInt(queue.workType.render))
@@ -1212,7 +1236,7 @@ pub const Rasterizer = struct {
       );
     }
     // TODO vdq can't be null here bc MTR
-    self.queues.putNoClobber(queue.contextIdx, vdq.?) catch unreachable;
+    try self.queues.putNoClobber(queue.contextIdx, vdq.?);
   }
 
   pub fn createHeapFromMemoryRequirements(
@@ -1220,7 +1244,7 @@ pub const Rasterizer = struct {
     context : mtr.Context,
     heap : mtr.heap.Primitive,
     memoryRequirements : [] mtr.util.MemoryRequirements
-  ) void {
+  ) !void {
     var memProps = &self.vkd.physicalDeviceMemoryProperties;
 
     // grab all of the potential heaps we can use
@@ -1260,7 +1284,7 @@ pub const Rasterizer = struct {
         .memoryTypeIndex = memoryTypeIt,
       };
 
-      (validHeaps.addOne() catch unreachable).* = newHeap;
+      (try validHeaps.addOne()).* = newHeap;
     }
 
     std.debug.assert(validHeaps.items.len > 0);
@@ -1268,13 +1292,13 @@ pub const Rasterizer = struct {
     // TODO maybe better selection from memory lengths?
     var newHeap = validHeaps.items[0];
 
-    self.heaps.putNoClobber(heap.contextIdx, newHeap) catch unreachable;
+    try self.heaps.putNoClobber(heap.contextIdx, newHeap);
   }
 
   // BELOW needs to be REMOVED
   pub fn createHeap(
     self : * @This(), _ : mtr.Context, heap : mtr.heap.Primitive
-  ) void {
+  ) !void {
     var memProps = &self.vkd.physicalDeviceMemoryProperties;
 
     // grab all of the potential heaps we can use
@@ -1324,15 +1348,15 @@ pub const Rasterizer = struct {
       .hostWritable => newHeap = hostVisibleHeap,
     }
 
-    self.heaps.putNoClobber(heap.contextIdx, newHeap.?) catch unreachable;
+    try self.heaps.putNoClobber(heap.contextIdx, newHeap.?);
   }
 
   pub fn createHeapRegion(
     self : * @This(), _ : mtr.Context, heapRegion : mtr.heap.Region
-  ) void {
+  ) !void {
     var heap = self.heaps.get(heapRegion.allocatedHeap).?;
     std.debug.assert(heapRegion.length > 0);
-    var deviceMemory = (
+    var deviceMemory = try (
       self.vkd.vkdd.allocateMemory(
         self.vkd.device,
         vk.MemoryAllocateInfo {
@@ -1340,10 +1364,9 @@ pub const Rasterizer = struct {
           .memoryTypeIndex = @intCast(u32, heap.memoryTypeIndex),
         },
         null
-      ) catch unreachable
+      )
     );
-    self.heapRegions.putNoClobber(heapRegion.contextIdx, deviceMemory)
-      catch unreachable;
+    try self.heapRegions.putNoClobber(heapRegion.contextIdx, deviceMemory);
   }
 
   pub fn bindBufferToSubheap(
@@ -1364,7 +1387,7 @@ pub const Rasterizer = struct {
     self : * @This(),
     _ : mtr.Context,
     buffer : mtr.buffer.Primitive,
-  ) void {
+  ) !void {
     const vkBufferCI = vk.BufferCreateInfo {
       .flags = .{ },
       .size = buffer.length,
@@ -1374,11 +1397,13 @@ pub const Rasterizer = struct {
       .pQueueFamilyIndices = undefined, // TODO pull from queueSharing union
     };
 
-    const vkBuffer = (
+    const vkBuffer = try (
       self.vkd.vkdd.createBuffer(self.vkd.device, vkBufferCI, null)
-    ) catch unreachable;
+    );
 
-    self.buffers.putNoClobber(buffer.contextIdx, vkBuffer) catch unreachable;
+    try self.labelObject(buffer.label, vkBuffer);
+
+    try self.buffers.putNoClobber(buffer.contextIdx, vkBuffer);
   }
 
   pub fn bufferMemoryRequirements(
@@ -1447,8 +1472,8 @@ pub const Rasterizer = struct {
     self : * @This(),
     _ : mtr.Context,
     image : mtr.image.Primitive,
-  ) void {
-    var vkImage = (
+  ) !void {
+    var vkImage = try (
       self.vkd.vkdd.createImage(
         self.vkd.device,
         vk.ImageCreateInfo {
@@ -1478,13 +1503,15 @@ pub const Rasterizer = struct {
           .initialLayout = vk.ImageLayout.@"undefined",
         },
         null,
-      ) catch unreachable
+      )
     );
 
-    self.images.putNoClobber(
+    try self.labelObject(image.label, vkImage);
+
+    try self.images.putNoClobber(
       image.contextIdx,
       Image { .handle = vkImage, .partOfSwapchain = false, },
-    ) catch unreachable;
+    );
   }
 
   pub fn createImageView(
@@ -1515,19 +1542,21 @@ pub const Rasterizer = struct {
       )
     );
 
-    self.imageViews.putNoClobber(
+    try self.labelObject(imageView.label, vkImageView);
+
+    try self.imageViews.putNoClobber(
       imageView.contextIdx,
       vkImageView,
-    ) catch unreachable;
+    );
   }
 
   pub fn createCommandPool(
     self : * @This(),
     _ : mtr.Context,
     commandPool : mtr.command.Pool,
-  ) void {
+  ) !void {
     var vkQueue = self.queues.getPtr(commandPool.queue).?;
-    var vkCommandPool = (
+    var vkCommandPool = try (
       self.vkd.vkdd.createCommandPool(
         self.vkd.device,
         vk.CommandPoolCreateInfo {
@@ -1539,23 +1568,25 @@ pub const Rasterizer = struct {
         },
         null,
       )
-    ) catch unreachable;
-    self.commandPools.putNoClobber(commandPool.contextIdx, vkCommandPool)
-      catch unreachable;
+    );
+
+    try self.labelObject(commandPool.label, vkCommandPool);
+
+    try self.commandPools.putNoClobber(commandPool.contextIdx, vkCommandPool);
   }
 
   pub fn createCommandBuffer(
     self : * @This(),
     _ : mtr.Context,
-    commandBuffer : mtr.command.Buffer,
-  ) void {
-    var vkCommandPool = self.commandPools.get(commandBuffer.commandPool).?;
+    mtrCommandBuffer : mtr.command.Buffer,
+  ) !void {
+    var vkCommandPool = self.commandPools.get(mtrCommandBuffer.commandPool).?;
     var newCommandBuffer = (
-      CommandBuffer.init(commandBuffer.commandPool, self.allocator)
+      CommandBuffer.init(mtrCommandBuffer.commandPool, self.allocator)
     );
-    newCommandBuffer.buffers.resize(1) catch unreachable;
+    try newCommandBuffer.buffers.resize(1);
 
-    self.vkd.vkdd.allocateCommandBuffers(
+    try self.vkd.vkdd.allocateCommandBuffers(
       self.vkd.device,
       vk.CommandBufferAllocateInfo {
         .commandPool = vkCommandPool,
@@ -1563,26 +1594,31 @@ pub const Rasterizer = struct {
         .commandBufferCount = 1,
       },
       @ptrCast([*] vk.CommandBuffer, newCommandBuffer.buffers.items.ptr)
-    ) catch unreachable;
+    );
 
-    self.commandBuffers.putNoClobber(commandBuffer.idx, newCommandBuffer)
-      catch unreachable;
+    for (newCommandBuffer.buffers.items) |cmdBuf| {
+      try self.labelObject(mtrCommandBuffer.label, cmdBuf);
+    }
+
+    try self.commandBuffers.putNoClobber(
+      mtrCommandBuffer.idx, newCommandBuffer
+    );
   }
 
   pub fn beginCommandBufferWriting(
     self : * @This(),
     _ : mtr.Context,
     commandBufferIdx : mtr.command.BufferIdx,
-  ) void {
+  ) !void {
     var vkCommandBuffer = self.commandBuffers.getPtr(commandBufferIdx).?;
 
-    self.vkd.vkdd.beginCommandBuffer(
+    try self.vkd.vkdd.beginCommandBuffer(
       vkCommandBuffer.buffers.items[0],
       vk.CommandBufferBeginInfo {
         .flags = vk.CommandBufferUsageFlags { .oneTimeSubmitBit = false },
         .pInheritanceInfo = null,
       },
-    ) catch unreachable;
+    );
   }
 
   pub fn endCommandBufferWriting(
@@ -1601,7 +1637,7 @@ pub const Rasterizer = struct {
     context : mtr.Context,
     commandBufferIdx : mtr.command.BufferIdx,
     command : mtr.command.Action,
-  ) void {
+  ) !void {
     var commandBuffer = (
       self.commandBuffers.getPtr(commandBufferIdx).?
     );
@@ -1790,12 +1826,12 @@ pub const Rasterizer = struct {
           std.ArrayList(vk.ImageMemoryBarrier).init(self.allocator)
         );
         defer imageMemoryBarriers.deinit();
-        imageMemoryBarriers.resize(action.imageTapes.len) catch unreachable;
+        try imageMemoryBarriers.resize(action.imageTapes.len);
 
         for (action.imageTapes) |imageTape, idx| {
           // predict the subresource range, construct the image memory barrier
           //   from the tape
-          const image = context.images.get(imageTape.tape.image).?;
+          const image = context.images.get(imageTape.tape.?.image).?;
           const subresourceRange = (
             vk.ImageSubresourceRange {
               .aspectMask = .{ .colorBit = true },
@@ -1807,11 +1843,11 @@ pub const Rasterizer = struct {
           );
 
           var imageMemoryBarrier = vk.ImageMemoryBarrier {
-            .oldLayout = imageLayoutToVk(imageTape.tape.layout),
+            .oldLayout = imageLayoutToVk(imageTape.tape.?.layout),
             .newLayout = imageLayoutToVk(imageTape.layout),
-            .image = self.images.get(imageTape.tape.image).?.handle,
+            .image = self.images.get(imageTape.tape.?.image).?.handle,
             .subresourceRange = subresourceRange,
-            .srcAccessMask = accessFlagsToVk(imageTape.tape.accessFlags),
+            .srcAccessMask = accessFlagsToVk(imageTape.tape.?.accessFlags),
             .dstAccessMask = accessFlagsToVk(imageTape.accessFlags),
             .srcQueueFamilyIndex = vkQueue.familyIndex,
             .dstQueueFamilyIndex = vkQueue.familyIndex,
@@ -1819,8 +1855,8 @@ pub const Rasterizer = struct {
           imageMemoryBarriers.items[idx] = imageMemoryBarrier;
 
           // record changes to the tape
-          imageTape.tape.*.layout = imageTape.layout;
-          imageTape.tape.*.accessFlags = imageTape.accessFlags;
+          imageTape.tape.?.*.layout = imageTape.layout;
+          imageTape.tape.?.*.accessFlags = imageTape.accessFlags;
         }
 
         // -- create & copy over buffer memory barriers
@@ -1828,29 +1864,29 @@ pub const Rasterizer = struct {
           std.ArrayList(vk.BufferMemoryBarrier).init(self.allocator)
         );
         defer bufferMemoryBarriers.deinit();
-        bufferMemoryBarriers.resize(action.bufferTapes.len) catch unreachable;
+        try bufferMemoryBarriers.resize(action.bufferTapes.len);
 
         for (action.bufferTapes) |bufferTape, idx| {
           const bufferSize = (
-            if (bufferTape.tape.length == 0) (
-              context.buffers.get(bufferTape.tape.buffer).?.length
+            if (bufferTape.tape.?.length == 0) (
+              context.buffers.get(bufferTape.tape.?.buffer).?.length
             ) else (
-              bufferTape.tape.length
+              bufferTape.tape.?.length
             )
           );
           var bufferMemoryBarrier = vk.BufferMemoryBarrier {
-            .srcAccessMask = accessFlagsToVk(bufferTape.tape.accessFlags),
+            .srcAccessMask = accessFlagsToVk(bufferTape.tape.?.accessFlags),
             .dstAccessMask = accessFlagsToVk(bufferTape.accessFlags),
             .srcQueueFamilyIndex = vkQueue.familyIndex,
             .dstQueueFamilyIndex = vkQueue.familyIndex,
-            .buffer = self.buffers.get(bufferTape.tape.buffer).?,
-            .offset = bufferTape.tape.offset,
+            .buffer = self.buffers.get(bufferTape.tape.?.buffer).?,
+            .offset = bufferTape.tape.?.offset,
             .size = bufferSize,
           };
           bufferMemoryBarriers.items[idx] = bufferMemoryBarrier;
 
           // record changes to the tape
-          bufferTape.tape.*.accessFlags = bufferTape.accessFlags;
+          bufferTape.tape.?.*.accessFlags = bufferTape.accessFlags;
         }
 
         // -- set up pipeline barrier
@@ -1867,7 +1903,7 @@ pub const Rasterizer = struct {
         );
       },
       .uploadTexelToImageMemory => |action| {
-        var vkImage = self.images.get(action.imageTape.image).?;
+        var vkImage = self.images.get(action.imageTape.?.image).?;
         const subresourceRange = (
           vk.ImageSubresourceRange {
             .aspectMask = .{ .colorBit = true },
@@ -1880,7 +1916,7 @@ pub const Rasterizer = struct {
         self.vkd.vkdd.cmdClearColorImage(
           vkCommandBuffer,
           vkImage.handle,
-          imageLayoutToVk(action.imageTape.layout),
+          imageLayoutToVk(action.imageTape.?.layout),
           vk.ClearColorValue { .float32 = action.rgba },
           1,
           @ptrCast([*] const vk.ImageSubresourceRange, &subresourceRange),
@@ -1931,7 +1967,7 @@ pub const Rasterizer = struct {
           .{ .computeBit = true, },
           0,
           @intCast(u32, action.memory.len),
-          @ptrCast(* const c_void, action.memory.ptr),
+          @ptrCast(* const anyopaque, action.memory.ptr),
         );
       },
     }
@@ -2020,22 +2056,22 @@ pub const Rasterizer = struct {
 
   pub fn deviceWaitIdle(
     self : * @This()
-  ) void {
-    self.vkd.vkdd.deviceWaitIdle(self.vkd.device) catch unreachable;
+  ) !void {
+    try self.vkd.vkdd.deviceWaitIdle(self.vkd.device);
   }
 
   pub fn queueFlush(
     self : * @This(),
     _ : mtr.Context,
     queue : mtr.queue.Primitive,
-  ) void {
+  ) !void {
     var vkQueue = self.queues.get(queue.contextIdx).?;
-    self.vkd.vkdd.queueWaitIdle(
+    try self.vkd.vkdd.queueWaitIdle(
       vkQueue.handle
-    ) catch unreachable;
+    );
 
     // DEBUG
-    self.vkd.vkdd.deviceWaitIdle(self.vkd.device) catch unreachable;
+    try self.vkd.vkdd.deviceWaitIdle(self.vkd.device);
   }
 
   pub fn mapMemory(
@@ -2210,6 +2246,8 @@ pub const Rasterizer = struct {
       )
     );
 
+    try self.labelObject(pipelineLayout.label, vkPipelineLayout);
+
     try self.pipelineLayouts.putNoClobber(
       pipelineLayout.contextIdx,
       vkPipelineLayout
@@ -2229,7 +2267,7 @@ pub const Rasterizer = struct {
         .flags = .{},
         .stage = .{ .computeBit = true },
         .module = self.shaderModules.get(computePipeline.shaderModule).?,
-        .pName = computePipeline.pName,
+        .pName = computePipeline.entryFnLabel,
         .pSpecializationInfo = null,
       },
       .layout = self.pipelineLayouts.get(computePipeline.layout).?,
@@ -2245,6 +2283,8 @@ pub const Rasterizer = struct {
       null,
       @ptrCast([*] vk.Pipeline, &vkComputePipeline),
     );
+
+    try self.labelObject(computePipeline.label, vkComputePipeline);
 
     try self.computePipelines.putNoClobber(
       computePipeline.contextIdx,
@@ -2265,6 +2305,8 @@ pub const Rasterizer = struct {
       )
     );
 
+    try self.labelObject(semaphore.label, vkSemaphore);
+
     try self.semaphores.putNoClobber(semaphore.contextIdx, vkSemaphore);
   }
 
@@ -2280,6 +2322,8 @@ pub const Rasterizer = struct {
         null,
       )
     );
+
+    try self.labelObject(fence.label, vkFence);
 
     try self.fences.putNoClobber(fence.contextIdx, vkFence);
   }
@@ -2437,6 +2481,8 @@ pub const Rasterizer = struct {
         Image { .handle = vkImage, .partOfSwapchain = true },
       );
 
+      try self.labelObject("swapchain-image-N", vkImage);
+
       images[it] = prevIdx;
     }
   }
@@ -2525,12 +2571,5 @@ pub const Rasterizer = struct {
     visibility : mtr.heap.Visibility,
   ) mtr.util.HeapRegionAllocator {
     return mtr.util.HeapRegionAllocator.init(self, visibility);
-  }
-
-  pub fn createCommandBufferRecorder(
-    self : * @This(),
-    commandBuffer : mtr.command.BufferIdx,
-  ) mtr.util.CommandBufferRecorder {
-    return mtr.util.CommandBufferRecorder.init(self, commandBuffer);
   }
 };

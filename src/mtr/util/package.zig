@@ -197,38 +197,146 @@ pub const HeapRegionAllocator = struct {
   };
 };
 
+pub const FinalizedCommandBufferTapes = struct {
+  bufferTapes : std.AutoHashMap(mtr.buffer.Idx, mtr.memory.BufferTape),
+  imageTapes : std.AutoHashMap(mtr.image.Idx, mtr.memory.ImageTape),
+
+  pub fn deinit(self : * @This()) void {
+    self.bufferTapes.deinit();
+    self.imageTapes.deinit();
+  }
+};
+
 pub const CommandBufferRecorder = struct {
   commandBuffer : mtr.command.BufferIdx,
   mtrCtx : * mtr.Context,
 
-  pub fn init(
+  bufferTapes : std.AutoHashMap(mtr.buffer.Idx, mtr.memory.BufferTape),
+  imageTapes : std.AutoHashMap(mtr.image.Idx, mtr.memory.ImageTape),
+
+  pub const InitParams = struct {
     ctx : * mtr.Context,
     commandBuffer : mtr.command.BufferIdx,
-  ) CommandBufferRecorder {
-    ctx.beginCommandBufferWriting(commandBuffer);
+    bufferTapes : [] mtr.memory.BufferTape = &[_] mtr.memory.BufferTape {},
+    imageTapes : [] mtr.memory.ImageTape = &[_] mtr.memory.ImageTape {},
+    // commandBufferTapes just get copied to buffer/image-tapes at init
+    commandBufferTapes : [] mtr.util.FinalizedCommandBufferTapes = (
+      &[_] mtr.util.FinalizedCommandBufferTapes {}
+    ),
+  };
+
+  pub fn init(
+    params : InitParams,
+  ) !@This() {
+    try params.ctx.beginCommandBufferWriting(params.commandBuffer);
+    var self = @This() {
+      .mtrCtx = params.ctx,
+      .commandBuffer = params.commandBuffer,
+      .bufferTapes = (
+        std
+          .AutoHashMap(mtr.buffer.Idx, mtr.memory.BufferTape)
+          .init(params.ctx.primitiveAllocator)
+      ),
+      .imageTapes = (
+        std
+          .AutoHashMap(mtr.image.Idx, mtr.memory.ImageTape)
+          .init(params.ctx.primitiveAllocator)
+      ),
+    };
+
+    // put in the command buffer tapes first, so they can be overwritten
+    for (params.commandBufferTapes) |_, it| {
+      var bufferTapeIterator = (
+        params.commandBufferTapes[it].bufferTapes.iterator()
+      );
+      while (bufferTapeIterator.next()) |bufferTapeIter| {
+        var bufferTape = bufferTapeIter.value_ptr;
+        try self.bufferTapes.put(bufferTape.buffer, bufferTape.*);
+      }
+      var imageTapeIterator = (
+        params.commandBufferTapes[it].imageTapes.iterator()
+      );
+      while (imageTapeIterator.next()) |imageTapeIter| {
+        var imageTape = imageTapeIter.value_ptr;
+        try self.imageTapes.put(imageTape.image, imageTape.*);
+      }
+    }
+    for (params.bufferTapes) |bufferTape| {
+      var prev = try self.bufferTapes.fetchPut(bufferTape.buffer, bufferTape);
+      if (prev != null) {
+        std.log.warn("{s}{}", .{"overwriting previous value:", prev});
+      }
+    }
+    for (params.imageTapes) |imageTape| {
+      var prev = try self.imageTapes.fetchPut(imageTape.image, imageTape);
+      if (prev != null) {
+        std.log.warn("{s}{}", .{"overwriting previous value:", prev});
+      }
+    }
+
+    return self;
+  }
+
+  pub fn deinit(self : * @This()) void {
+    self.bufferTapes.deinit();
+    self.imageTapes.deinit();
+  }
+
+  // this will deinitialize self, returning the final image/bufferTapes.
+  //   This releases ownership of image/bufferTapes, so you must deallocate
+  pub fn finishWithFinalizedTapes(
+    self : * @This()
+  ) FinalizedCommandBufferTapes {
+    self.mtrCtx.endCommandBufferWriting(self.commandBuffer);
     return .{
-      .mtrCtx = ctx,
-      .commandBuffer = commandBuffer,
+      .imageTapes = self.imageTapes,
+      .bufferTapes = self.bufferTapes,
     };
   }
 
-  pub fn finish(self : @This()) void {
+  pub fn finish(self : * @This()) void {
     self.mtrCtx.endCommandBufferWriting(self.commandBuffer);
+    self.deinit();
   }
 
   pub fn append(
     self : @This(),
     command : anytype,
-  ) void {
-    self.mtrCtx.enqueueToCommandBuffer(self.commandBuffer, command);
+  ) !void {
+
+    var commandCopy = command;
+
+    // -- apply any actions that require being filled out by context such as
+    //    tapes
+    if (@TypeOf(command) == mtr.command.PipelineBarrier) {
+      // -- insert the image/buffer tapes
+      for (command.bufferTapes) |bufferTape, idx| {
+        commandCopy.bufferTapes[idx].tape = (
+          self.bufferTapes.getPtr(bufferTape.buffer).?
+        );
+      }
+
+      for (command.imageTapes) |imageTape, idx| {
+        commandCopy.imageTapes[idx].tape = (
+          self.imageTapes.getPtr(imageTape.image).?
+        );
+      }
+    }
+
+    if (@TypeOf(command) == mtr.command.UploadTexelToImageMemory) {
+      commandCopy.imageTape = self.imageTapes.getPtr(command.image).?;
+    }
+
+    try self.mtrCtx.enqueueToCommandBuffer(self.commandBuffer, commandCopy);
   }
 };
 
 pub const StageMemoryToImageParams = struct {
   queue : mtr.queue.Idx,
   commandBuffer : mtr.command.BufferIdx,
-  imageDst : mtr.buffer.Idx,
-  imageTape : * mtr.memory.ImageTape,
+  imageDst : mtr.image.Idx,
+  imageDstLayout : mtr.image.Layout,
+  imageDstAccessFlags : mtr.memory.AccessFlags,
   memoryToUpload : [] const u8,
 };
 
@@ -246,6 +354,7 @@ pub fn stageMemoryToImage(
 
     stagingBuffer = try (
       heapRegionAllocator.createBuffer(.{
+        .label = "staging-memory-to-image",
         .offset = 0,
         .length = @sizeOf(u8)*params.memoryToUpload.len,
         .usage = mtr.buffer.Usage{ .transferSrc = true },
@@ -273,33 +382,64 @@ pub fn stageMemoryToImage(
 
   {
     var commandBufferRecorder = (
-      mtrCtx.createCommandBufferRecorder(params.commandBuffer)
+      try mtr.util.CommandBufferRecorder.init(.{
+        .ctx = mtrCtx,
+        .commandBuffer = params.commandBuffer,
+        .imageTapes = &[_] mtr.memory.ImageTape {
+          .{
+            .image = params.imageDst,
+            .layout = params.imageDstLayout,
+            .accessFlags = params.imageDstAccessFlags,
+          }
+        }
+      })
     );
     defer commandBufferRecorder.finish();
 
-    commandBufferRecorder.append(
+    // transition image into transfer
+    try commandBufferRecorder.append(
       mtr.command.PipelineBarrier {
         .srcStage = .{ .host = true },
-        .dstStage = .{ .compute = true },
+        .dstStage = .{ .transfer = true },
         .imageTapes = (
           &[_] mtr.command.PipelineBarrier.ImageTapeAction {
             .{
-              .tape = params.imageTape,
+              .image = params.imageDst,
               .layout = .transferDst,
-              .accessFlags = .{ .transferWrite = true, },
+              .accessFlags = .{ .transferSrc = true, },
             },
           }
         ),
       },
     );
 
-    commandBufferRecorder.append(
+    // stage the copy TODO proper width/height
+    try commandBufferRecorder.append(
       mtr.command.TransferBufferToImage {
         .bufferSrc = stagingBuffer,
         .imageDst = params.imageDst,
         .xOffset = 0, .yOffset = 0, .zOffset = 0,
         .width = 1024, .height = 1024, .depth = 1,
       }
+    );
+
+    // put the image back into general layout
+    // TODO we probably want to set the layout to what it was before, but in
+    // case of uninitialized set it to general
+    try commandBufferRecorder.append(
+      mtr.command.PipelineBarrier {
+        .srcStage = .{ .transfer = true },
+        .dstStage = .{ .end = true },
+        .imageTapes = (
+          &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+            .{
+              .image = params.imageDst,
+              .layout = .general,
+              .accessFlags = .{ },
+            },
+          }
+        ),
+      },
     );
   }
 
@@ -315,6 +455,10 @@ pub const StageMemoryToBufferParams = struct {
   memoryToUpload : [] const u8,
 };
 
+// This creates a staging buffer, then records memory staging with given
+//   command buffer & immediately submits it to the provided queue.
+// This is useful for simple resource loading, but for things in-flight
+//   it's probably faster to use a compute shader and/or buffer copies
 pub fn stageMemoryToBuffer(
   mtrCtx : * mtr.Context,
   params : StageMemoryToBufferParams,
@@ -329,6 +473,7 @@ pub fn stageMemoryToBuffer(
 
     stagingBuffer = try (
       heapRegionAllocator.createBuffer(.{
+        .label = "staging-buffer-memory-to-buffer",
         .offset = 0,
         .length = @sizeOf(u8)*params.memoryToUpload.len,
         .usage = mtr.buffer.Usage{ .transferSrc = true },
@@ -354,11 +499,14 @@ pub fn stageMemoryToBuffer(
 
   {
     var commandBufferRecorder = (
-      mtrCtx.createCommandBufferRecorder(params.commandBuffer)
+      try mtr.util.CommandBufferRecorder.init(.{
+        .ctx = mtrCtx,
+        .commandBuffer = params.commandBuffer,
+      })
     );
     defer commandBufferRecorder.finish();
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.TransferMemory {
         .bufferSrc = stagingBuffer,
         .bufferDst = params.bufferDst,

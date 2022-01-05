@@ -10,8 +10,8 @@ fn compareValues(failStr : anytype, actual : u8, expected : u8,) void {
   }
 }
 
-const imageWidth = 1024;
-const imageHeight = 1024;
+const imageWidth = 2048;
+const imageHeight = 2048;
 
 const tileWidth = 16;
 const tileHeight = 16;
@@ -95,32 +95,25 @@ pub const BasicPipeline = struct {
 pub const BasicResources = struct {
   outputColorImage : mtr.image.Idx,
   outputColorImageView : mtr.image.ViewIdx,
-  outputColorImageTape : mtr.memory.ImageTape,
 
   testTextureImage : mtr.image.Idx,
   testTextureImageView : mtr.image.ViewIdx,
-  testTextureImageTape : mtr.memory.ImageTape,
 
   visibilitySurfaceImage : mtr.image.Idx,
   visibilitySurfaceImageView : mtr.image.ViewIdx,
-  visibilitySurfaceImageTape : mtr.memory.ImageTape,
 
   inputAttributeAssemblyBuffer : mtr.buffer.Idx,
   inputAttributeAssemblyMetadataBuffer : mtr.buffer.Idx,
 
   intermediaryAttributeAssemblyBuffer : mtr.buffer.Idx,
-  intermediaryAttributeAssemblyTape : mtr.memory.BufferTape,
 
   microRastEmitTriangleIDsBuffer : mtr.buffer.Idx,
-  microRastEmitTriangleIDsTape : mtr.memory.BufferTape,
   microRastEmitMetadataBuffer : mtr.buffer.Idx,
-  microRastEmitMetadataTape : mtr.memory.BufferTape,
+  microRastEmitMetadataClearingBuffer : mtr.buffer.Idx,
 
   tiledRastEmitTriangleIDsBuffer : mtr.buffer.Idx,
-  tiledRastEmitTriangleIDsTape : mtr.memory.BufferTape,
-
   tiledRastDispatchBuffer : mtr.buffer.Idx,
-  tiledRastDispatchTape : mtr.memory.BufferTape,
+  tiledRastDispatchClearingBuffer : mtr.buffer.Idx,
 };
 
 pub const BasicScene = struct {
@@ -135,7 +128,6 @@ pub const BasicSwapchain = struct {
   swapchain : mtr.window.SwapchainId,
   images : std.ArrayList(mtr.image.Idx),
   // imageViews : std.ArrayList(mtr.image.ViewIdx),
-  imageTapes : std.ArrayList(mtr.memory.ImageTape),
   currentImageIndex : u32,
 
   imageAvailableSemaphore : mtr.memory.SemaphoreId,
@@ -144,7 +136,6 @@ pub const BasicSwapchain = struct {
   pub fn deinit(self : * @This()) void {
     self.images.deinit();
     // self.imageViews.deinit();
-    self.imageTapes.deinit();
   }
 };
 
@@ -160,15 +151,16 @@ fn createBasicSwapchain(
       },)
     ),
     .images = std.ArrayList(mtr.image.Idx).init(mtrCtx.primitiveAllocator),
-    .imageTapes = (
-      std.ArrayList(mtr.memory.ImageTape).init(mtrCtx.primitiveAllocator)
-    ),
     //.imageViews = (
     // std.ArrayList(mtr.image.Idx).init(mtrCtx.primitiveAllocator)
     //),
     .currentImageIndex = 0,
-    .imageAvailableSemaphore = try mtrCtx.createSemaphore(),
-    .renderFinishedSemaphore = try mtrCtx.createSemaphore(),
+    .imageAvailableSemaphore = (
+      try mtrCtx.createSemaphore(.{ .label = "image-available" })
+    ),
+    .renderFinishedSemaphore = (
+      try mtrCtx.createSemaphore(.{ .label = "render-finished" })
+    ),
   };
 
   try basicSwapchain.images.resize(
@@ -177,13 +169,6 @@ fn createBasicSwapchain(
   try mtrCtx.swapchainImages(
     basicSwapchain.swapchain, basicSwapchain.images.items
   );
-
-  try basicSwapchain.imageTapes.resize(basicSwapchain.images.items.len);
-  for (basicSwapchain.images.items) |image, idx| {
-    basicSwapchain.imageTapes.items[idx] = (
-      mtr.memory.ImageTape { .image = image, }
-    );
-  }
 
   // try basicSwapchain.imageViews.resize(basicSwapchain.images.items.len);
   // for (basicSwapchain.images.items) |image, idx| {
@@ -238,13 +223,15 @@ pub fn main() !void {
   const commandPoolScratch : mtr.command.PoolIdx = (
     try mtrCtx.constructCommandPool(.{
       .flags = .{ .transient = true, .resetCommandBuffer = true },
+      .label = "scratch",
       .queue = queue,
     })
   );
 
   const commandBufferScratch : mtr.command.BufferIdx = (
-    try mtrCtx.constructCommandBuffer(.{
+    try mtrCtx.createCommandBuffer(.{
       .commandPool = commandPoolScratch,
+      .label = "scratch",
     })
   );
 
@@ -260,6 +247,7 @@ pub fn main() !void {
         .storageImage = 10,
         .uniformBuffer = 10,
       },
+      .label = "per-frame",
     })
   );
 
@@ -277,14 +265,16 @@ pub fn main() !void {
       resources.outputColorImage = try (
         heapRegionAllocator.createImage(.{
           .offset = 0,
-          .label = "output color image",
+          .label = "output-color-image",
           .width = imageWidth, .height = imageHeight, .depth = 1,
           .samplesPerTexel = mtr.image.Sample.s1,
           .arrayLayers = 1,
           .mipmapLevels = 1,
           .byteFormat = mtr.image.ByteFormat.uint8,
           .channels = mtr.image.Channel.RGBA,
-          .usage = .{ .transferSrc = true, .storage = true, },
+          .usage = .{
+            .transferSrc = true, .transferDst = true, .storage = true,
+          },
           .normalized = true,
           .queueSharing = .exclusive,
         })
@@ -292,11 +282,10 @@ pub fn main() !void {
     }
 
     resources.outputColorImageView = try (
-      mtrCtx.createImageView(.{.image = resources.outputColorImage, })
-    );
-
-    resources.outputColorImageTape = (
-      mtr.memory.ImageTape { .image = resources.outputColorImage, }
+      mtrCtx.createImageView(.{
+        .label = "output-color-image-view",
+        .image = resources.outputColorImage,
+      })
     );
   }
 
@@ -308,7 +297,7 @@ pub fn main() !void {
       resources.testTextureImage = try (
         heapRegionAllocator.createImage(.{
           .offset = 0,
-          .label = "test diffuse texture",
+          .label = "test-diffuse-texture",
           .width = 1024, .height = 1024, .depth = 1,
           .samplesPerTexel = mtr.image.Sample.s1,
           .arrayLayers = 1,
@@ -323,11 +312,10 @@ pub fn main() !void {
     }
 
     resources.testTextureImageView = try (
-      mtrCtx.createImageView(.{.image = resources.testTextureImage, })
-    );
-
-    resources.testTextureImageTape = (
-      mtr.memory.ImageTape { .image = resources.testTextureImage, }
+      mtrCtx.createImageView(.{
+        .label = "test-diffuse-texture-view",
+        .image = resources.testTextureImage, 
+      })
     );
 
     { // memory upload
@@ -339,11 +327,12 @@ pub fn main() !void {
         .queue = queue,
         .commandBuffer = commandBufferScratch,
         .imageDst = resources.testTextureImage,
-        .imageTape = &resources.testTextureImageTape,
+        .imageDstLayout = .uninitialized,
+        .imageDstAccessFlags = .{ },
         .memoryToUpload = textureTexels.items,
       });
 
-      mtrCtx.queueFlush(queue);
+      try mtrCtx.queueFlush(queue);
     }
   }
 
@@ -355,14 +344,14 @@ pub fn main() !void {
       resources.visibilitySurfaceImage = try (
         heapRegionAllocator.createImage(.{
           .offset = 0,
-          .label = "visibility surface",
+          .label = "visibility-surface",
           .width = imageWidth, .height = imageHeight, .depth = 1,
           .samplesPerTexel = mtr.image.Sample.s1,
           .arrayLayers = 1,
           .mipmapLevels = 1,
           .byteFormat = mtr.image.ByteFormat.uint64,
           .channels = mtr.image.Channel.R,
-          .usage = .{ .storage = true, },
+          .usage = .{ .storage = true, .transferDst = true, },
           .normalized = true,
           .queueSharing = .exclusive,
         })
@@ -370,11 +359,10 @@ pub fn main() !void {
     }
 
     resources.visibilitySurfaceImageView = try (
-      mtrCtx.createImageView(.{.image = resources.visibilitySurfaceImage, })
-    );
-
-    resources.visibilitySurfaceImageTape = (
-      mtr.memory.ImageTape { .image = resources.visibilitySurfaceImage, }
+      mtrCtx.createImageView(.{
+        .label = "visibility-surface-view",
+        .image = resources.visibilitySurfaceImage,
+      })
     );
   }
 
@@ -429,6 +417,7 @@ pub fn main() !void {
 
       resources.inputAttributeAssemblyBuffer = try (
         heapRegionAllocator.createBuffer(.{
+          .label = "input-attribute-assembly",
           .offset = 0,
           .length = @sizeOf(f32)*sceneMetadata.numFloatsInScene,
           .usage = (
@@ -448,7 +437,7 @@ pub fn main() !void {
           std.mem.sliceAsBytes(origins.items)
         )
       });
-      mtrCtx.queueFlush(queue);
+      try mtrCtx.queueFlush(queue);
     }
   }
 
@@ -459,6 +448,7 @@ pub fn main() !void {
 
       resources.inputAttributeAssemblyMetadataBuffer = try (
         heapRegionAllocator.createBuffer(.{
+          .label = "input-attribute-assembly-metadata",
           .offset = 0,
           .length = @sizeOf(u32)*1 + @sizeOf(f32)*3,
           .usage = (
@@ -491,7 +481,7 @@ pub fn main() !void {
         ),
       });
 
-      mtrCtx.queueFlush(queue);
+      try mtrCtx.queueFlush(queue);
     }
   }
 
@@ -503,6 +493,7 @@ pub fn main() !void {
 
     resources.intermediaryAttributeAssemblyBuffer = try (
       heapRegionAllocator.createBuffer(.{
+        .label = "intermediary-attribute-assembly",
         .offset = 0,
         .length = @sizeOf(f32)*sceneMetadata.numFloatsInScene,
         .usage = (
@@ -510,12 +501,6 @@ pub fn main() !void {
         ),
         .queueSharing = .exclusive,
       })
-    );
-
-    resources.intermediaryAttributeAssemblyTape = (
-      mtr.memory.BufferTape {
-        .buffer = resources.intermediaryAttributeAssemblyBuffer,
-      }
     );
   }
 
@@ -525,6 +510,7 @@ pub fn main() !void {
 
     resources.microRastEmitTriangleIDsBuffer = try (
       heapRegionAllocator.createBuffer(.{
+        .label = "microrasterizer-emit-triangles-ID",
         .offset = 0,
         .length = @sizeOf(u64)*sceneMetadata.numFloatsInScene,
         .usage = (
@@ -532,12 +518,6 @@ pub fn main() !void {
         ),
         .queueSharing = .exclusive,
       })
-    );
-
-    resources.microRastEmitTriangleIDsTape = (
-      mtr.memory.BufferTape {
-        .buffer = resources.microRastEmitTriangleIDsBuffer,
-      }
     );
   }
 
@@ -547,20 +527,50 @@ pub fn main() !void {
 
     resources.microRastEmitMetadataBuffer = try (
       heapRegionAllocator.createBuffer(.{
+        .label = "microrasterizer-emit-metadata",
         .offset = 0,
         .length = @sizeOf(u64),
         .usage = (
-          mtr.buffer.Usage { .bufferStorage = true }
+          mtr.buffer.Usage {
+            .transferDst = true,
+            .transferSrc = true,
+            .bufferStorage = true
+          }
         ),
         .queueSharing = .exclusive,
       })
     );
+  }
 
-    resources.microRastEmitMetadataTape = (
-      mtr.memory.BufferTape {
-        .buffer = resources.microRastEmitMetadataBuffer,
-      }
-    );
+  { // create microrasterizer emit metadata staging buffer
+    {
+      var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+      defer _ = heapRegionAllocator.finish();
+
+      resources.microRastEmitMetadataClearingBuffer = try (
+        heapRegionAllocator.createBuffer(.{
+          .label = "microrasterizer-emit-metadata-staging",
+          .offset = 0,
+          .length = @sizeOf(u64),
+          .usage = (
+            mtr.buffer.Usage {
+              .transferSrc = true, .transferDst = true, .bufferStorage = true,
+            }
+          ),
+          .queueSharing = .exclusive,
+        })
+      );
+    }
+
+    { // clear to 0
+      try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
+        .queue = queue,
+        .commandBuffer = commandBufferScratch,
+        .bufferDst = resources.microRastEmitMetadataClearingBuffer,
+        .memoryToUpload = &[_] u8 { 0, 0, 0, 0, },
+      });
+    }
+    try mtrCtx.queueFlush(queue);
   }
 
   { // create tiled rasterizer emit triangle IDs buffer
@@ -569,6 +579,7 @@ pub fn main() !void {
 
     resources.tiledRastEmitTriangleIDsBuffer = try (
       heapRegionAllocator.createBuffer(.{
+        .label = "tiled-rasterizer-emit-triangle-IDs",
         .offset = 0,
         .length = @sizeOf(u64)*tileWidth*tileHeight*64_000, // ~32 MB
         .usage = (
@@ -576,12 +587,6 @@ pub fn main() !void {
         ),
         .queueSharing = .exclusive,
       })
-    );
-
-    resources.tiledRastEmitTriangleIDsTape = (
-      mtr.memory.BufferTape {
-        .buffer = resources.tiledRastEmitTriangleIDsBuffer,
-      }
     );
   }
 
@@ -592,6 +597,7 @@ pub fn main() !void {
 
       resources.tiledRastDispatchBuffer = try (
         heapRegionAllocator.createBuffer(.{
+          .label = "tiled-rasterizer-dispatch",
           .offset = 0,
           .length = @sizeOf(u32)*4*16*16,
           .usage = mtr.buffer.Usage {
@@ -602,31 +608,44 @@ pub fn main() !void {
           .queueSharing = .exclusive,
         })
       );
+    }
+  }
 
-      resources.tiledRastDispatchTape = (
-        mtr.memory.BufferTape {
-          .buffer = resources.tiledRastDispatchBuffer,
-        }
+  { // create tiled rasterizer dispatch staging buffer
+    {
+      var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+      defer _ = heapRegionAllocator.finish();
+
+      resources.tiledRastDispatchClearingBuffer = try (
+        heapRegionAllocator.createBuffer(.{
+          .label = "tiled-rasterizer-dispatch-staging",
+          .offset = 0,
+          .length = @sizeOf(u32)*4*16*16,
+          .usage = mtr.buffer.Usage {
+            .transferDst = true,
+            .transferSrc = true,
+          },
+          .queueSharing = .exclusive,
+        })
       );
     }
 
-    { // upload
-      var dispatches = std.ArrayList(u32).init(debugAllocator.allocator());
-      defer dispatches.deinit();
+    { // clear the tiled rasterizer dispatch buffer <X, Y, Tris, Tris>
+      var dispatches : [16*16*4] u32 = undefined;
       var it : u32 = 0;
       while (it < 16*16) : (it += 1) {
-        try dispatches.appendSlice(&[_] u32 { 1, 1, 0, 0 });
+        dispatches[it*4+0] = 1; dispatches[it*4+1] = 1;
+        dispatches[it*4+2] = 1; dispatches[it*4+3] = 1;
       }
 
       try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
         .queue = queue,
         .commandBuffer = commandBufferScratch,
-        .bufferDst = resources.tiledRastDispatchBuffer,
-        .memoryToUpload = std.mem.sliceAsBytes(dispatches.items),
+        .bufferDst = resources.tiledRastDispatchClearingBuffer,
+        .memoryToUpload = std.mem.sliceAsBytes(dispatches[0..]),
       });
-
-      mtrCtx.queueFlush(queue);
     }
+    try mtrCtx.queueFlush(queue);
   }
 
   // -- create pipelines -------------------------------------------------------
@@ -644,6 +663,7 @@ pub fn main() !void {
     meshPipeline.module = (
       try mtrCtx.createShaderModule(
         mtr.shader.ConstructInfo {
+          .label = "simple-triangle-mesh",
           .data = meshModuleFileData.items,
         }
       )
@@ -659,6 +679,7 @@ pub fn main() !void {
 
     meshPipeline.descriptorSetLayout = (
       try mtrCtx.createDescriptorSetLayout(.{
+        .label = "mesh-descriptor-set-layout",
         .pool = descriptorSetPoolPerFrame,
         .frequency = .perFrame,
         .bindings = (
@@ -698,6 +719,7 @@ pub fn main() !void {
 
     meshPipeline.pipelineLayout = (
       try mtrCtx.createPipelineLayout(.{
+        .label = "mesh-pipeline-layout",
         .descriptorSetLayouts = &[_] mtr.descriptor.LayoutIdx {
           meshPipeline.descriptorSetLayout,
         },
@@ -706,8 +728,9 @@ pub fn main() !void {
 
     meshPipeline.pipeline = try (
       mtrCtx.createComputePipeline(.{
+        .label = "mesh-pipeline",
         .shaderModule = meshPipeline.module,
-        .pName = "main",
+        .entryFnLabel = "main",
         .layout = meshPipeline.pipelineLayout,
       })
     );
@@ -771,6 +794,7 @@ pub fn main() !void {
     microRastPipeline.module = (
       try mtrCtx.createShaderModule(
         mtr.shader.ConstructInfo {
+          .label = "micro-rasterizer",
           .data = microRastModuleFileData.items,
         }
       )
@@ -783,6 +807,7 @@ pub fn main() !void {
 
     microRastPipeline.descriptorSetLayout = (
       try mtrCtx.createDescriptorSetLayout(.{
+        .label = "micro-rasterizer-descriptor-set",
         .pool = descriptorSetPoolPerFrame,
         .frequency = .perFrame,
         .bindings = (
@@ -810,6 +835,7 @@ pub fn main() !void {
 
     microRastPipeline.pipelineLayout = (
       try mtrCtx.createPipelineLayout(.{
+        .label = "micro-rasterizer-layout",
         .descriptorSetLayouts = &[_] mtr.descriptor.LayoutIdx {
           microRastPipeline.descriptorSetLayout
         },
@@ -818,8 +844,9 @@ pub fn main() !void {
 
     microRastPipeline.pipeline = try (
       mtrCtx.createComputePipeline(.{
+        .label = "micro-rasterizer",
         .shaderModule = microRastPipeline.module,
-        .pName = "main",
+        .entryFnLabel = "main",
         .layout = microRastPipeline.pipelineLayout,
       })
     );
@@ -881,6 +908,7 @@ pub fn main() !void {
     tiledIndirectDivisionPipeline.module = (
       try mtrCtx.createShaderModule(
         mtr.shader.ConstructInfo {
+          .label = "tiled-indirect-division",
           .data = tiledIndirectDivisionModuleFileData.items,
         }
       )
@@ -890,6 +918,7 @@ pub fn main() !void {
 
     tiledIndirectDivisionPipeline.descriptorSetLayout = (
       try mtrCtx.createDescriptorSetLayout(.{
+        .label = "tiled-indirect-division",
         .pool = descriptorSetPoolPerFrame,
         .frequency = .perFrame,
         .bindings = (
@@ -905,6 +934,7 @@ pub fn main() !void {
 
     tiledIndirectDivisionPipeline.pipelineLayout = (
       try mtrCtx.createPipelineLayout(.{
+        .label = "tiled-indirect-division",
         .descriptorSetLayouts = &[_] mtr.descriptor.LayoutIdx {
           tiledIndirectDivisionPipeline.descriptorSetLayout
         },
@@ -914,8 +944,9 @@ pub fn main() !void {
 
     tiledIndirectDivisionPipeline.pipeline = try (
       mtrCtx.createComputePipeline(.{
+        .label = "tiled-indirect-division",
         .shaderModule = tiledIndirectDivisionPipeline.module,
-        .pName = "main",
+        .entryFnLabel = "main",
         .layout = tiledIndirectDivisionPipeline.pipelineLayout,
       })
     );
@@ -960,6 +991,7 @@ pub fn main() !void {
     tiledRastPipeline.module = (
       try mtrCtx.createShaderModule(
         mtr.shader.ConstructInfo {
+          .label = "tiled-rasterizer",
           .data = tiledRastModuleFileData.items,
         }
       )
@@ -972,6 +1004,7 @@ pub fn main() !void {
 
     tiledRastPipeline.descriptorSetLayout = (
       try mtrCtx.createDescriptorSetLayout(.{
+        .label = "tiled-rasterizer",
         .pool = descriptorSetPoolPerFrame,
         .frequency = .perFrame,
         .bindings = (
@@ -999,6 +1032,7 @@ pub fn main() !void {
 
     tiledRastPipeline.pipelineLayout = (
       try mtrCtx.createPipelineLayout(.{
+        .label = "tiled-rasterizer",
         .descriptorSetLayouts = &[_] mtr.descriptor.LayoutIdx {
           tiledRastPipeline.descriptorSetLayout
         },
@@ -1009,8 +1043,9 @@ pub fn main() !void {
 
     tiledRastPipeline.pipeline = try (
       mtrCtx.createComputePipeline(.{
+        .label = "tiled-rasterizer",
         .shaderModule = tiledRastPipeline.module,
-        .pName = "main",
+        .entryFnLabel = "main",
         .layout = tiledRastPipeline.pipelineLayout,
       })
     );
@@ -1073,6 +1108,7 @@ pub fn main() !void {
     materialPipeline.module = (
       try mtrCtx.createShaderModule(
         mtr.shader.ConstructInfo {
+          .label = "material",
           .data = materialModuleFileData.items,
         }
       )
@@ -1087,6 +1123,7 @@ pub fn main() !void {
 
     materialPipeline.descriptorSetLayout = (
       try mtrCtx.createDescriptorSetLayout(.{
+        .label = "material",
         .pool = descriptorSetPoolPerFrame,
         .frequency = .perFrame,
         .bindings = (
@@ -1118,6 +1155,7 @@ pub fn main() !void {
 
     materialPipeline.pipelineLayout = (
       try mtrCtx.createPipelineLayout(.{
+        .label = "material",
         .descriptorSetLayouts = &[_] mtr.descriptor.LayoutIdx {
           materialPipeline.descriptorSetLayout
         },
@@ -1127,8 +1165,9 @@ pub fn main() !void {
 
     materialPipeline.pipeline = try (
       mtrCtx.createComputePipeline(.{
+        .label = "material",
         .shaderModule = materialPipeline.module,
-        .pName = "main",
+        .entryFnLabel = "main",
         .layout = materialPipeline.pipelineLayout,
       })
     );
@@ -1183,36 +1222,313 @@ pub fn main() !void {
     }
   }
 
-  // -- record commands --------------------------------------------------------
+  _ = materialPipeline;
+  _ = tiledRastPipeline;
+  _ = meshPipeline;
+  _ = microRastPipeline;
+  _ = tiledIndirectDivisionPipeline;
+
+  // INITIAL LAYOUTS -> [loop] { CLEAR, RENDER, PRESENT }
+
+  // -- record/perform commands [ INITIAL LAYOUTS ] ----------------------------
+  // set the initial layouts/access for buffers/images, which is what
+  //   CLEAR will expect
+  var initialLayoutTapes : mtr.util.FinalizedCommandBufferTapes = undefined;
+  defer initialLayoutTapes.deinit();
+  {
+    const initialLayoutCommandBuffer : mtr.command.BufferIdx = (
+      try mtrCtx.createCommandBuffer(.{
+        .commandPool = commandPoolScratch,
+        .label = "initial layout",
+      })
+    );
+
+    // record commands
+    {
+      var imageTapes = try std.BoundedArray(mtr.memory.ImageTape, 8).init(0);
+      try imageTapes.appendSlice(
+        &[_] mtr.memory.ImageTape {
+          .{
+            .image = resources.visibilitySurfaceImage,
+            .layout = .uninitialized,
+            .accessFlags = .{},
+          }, .{
+            .image = resources.outputColorImage,
+            .layout = .uninitialized,
+            .accessFlags = .{ },
+          }, .{
+            .image = resources.testTextureImage,
+            .layout = .uninitialized,
+            .accessFlags = .{},
+          }
+        }
+      );
+      for (basicSwapchain.images.items) |image| {
+        try imageTapes.append(.{
+          .image = image,
+          .layout = .uninitialized,
+          .accessFlags = .{},
+        });
+      }
+      var commandBufferRecorder = (
+        try mtr.util.CommandBufferRecorder.init(.{
+          .ctx = &mtrCtx,
+          .commandBuffer = initialLayoutCommandBuffer,
+          .imageTapes = imageTapes.slice()
+        })
+      );
+
+      // prepare swapchain to be copied into
+      for (basicSwapchain.images.items) |image| {
+        try commandBufferRecorder.append(
+          mtr.command.PipelineBarrier {
+            .srcStage = .{ .begin = true },
+            .dstStage = .{ .end = true },
+            .imageTapes = (
+              &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+                .{
+                  .image = image,
+                  .layout = .present,
+                  .accessFlags = .{ },
+                },
+              }
+            ),
+          },
+        );
+      }
+
+      defer initialLayoutTapes = (
+        commandBufferRecorder.finishWithFinalizedTapes()
+      );
+
+      try commandBufferRecorder.append(
+        mtr.command.PipelineBarrier {
+          .srcStage = .{ .begin = true },
+          .dstStage = .{ .end = true },
+          .imageTapes = (
+            &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+              .{
+                .image = resources.visibilitySurfaceImage,
+                .layout = .general,
+                .accessFlags = .{},
+              },
+              .{
+                .image = resources.outputColorImage,
+                .layout = .general,
+                .accessFlags = .{},
+              },
+              .{
+                .image = resources.testTextureImage,
+                .layout = .general,
+                .accessFlags = .{},
+              },
+            }
+          ),
+        },
+      );
+    }
+
+    // submit
+    try mtrCtx.submitCommandBufferToQueue(
+      queue, initialLayoutCommandBuffer, .{}
+    );
+
+    try mtrCtx.queueFlush(queue);
+  }
+
+  // -- record commands [ CLEAR ] ----------------------------------------------
+  // clear the contents necessary to render the frame
+  const renderClearPerFrameCommandBuffer : mtr.command.BufferIdx = (
+    try mtrCtx.createCommandBuffer(.{
+      .commandPool = commandPoolScratch,
+      .label = "render clear",
+    })
+  );
+  var renderClearPerFrameTapes : mtr.util.FinalizedCommandBufferTapes = (
+    undefined
+  );
+  defer renderClearPerFrameTapes.deinit();
   {
     var commandBufferRecorder = (
-      mtrCtx.createCommandBufferRecorder(commandBufferScratch)
+      try mtr.util.CommandBufferRecorder.init(.{
+        .ctx = &mtrCtx,
+        .commandBuffer = renderClearPerFrameCommandBuffer,
+        .commandBufferTapes = &[_] mtr.util.FinalizedCommandBufferTapes {
+          initialLayoutTapes,
+        },
+        .bufferTapes = &[_] mtr.memory.BufferTape {
+          .{ .buffer = resources.microRastEmitMetadataBuffer, },
+          .{ .buffer = resources.microRastEmitTriangleIDsBuffer, },
+          .{ .buffer = resources.intermediaryAttributeAssemblyBuffer, },
+          .{ .buffer = resources.tiledRastEmitTriangleIDsBuffer, },
+          .{ .buffer = resources.tiledRastDispatchBuffer, },
+        },
+      })
     );
-    defer commandBufferRecorder.finish();
+    defer renderClearPerFrameTapes = (
+      commandBufferRecorder.finishWithFinalizedTapes()
+    );
+
+    // -- what to clear:
+    // * microRastEmitMetadataBuffer
+    // * tiledRastDispatchBuffer
+    // * visibilitySurfaceImage
+    // * outputColorImage
+    // the rest don't need clearing because either, they will be overwritten,
+    //   or previous frame information stored won't be referenced, ei an array
+
+    try commandBufferRecorder.append(
+      mtr.command.PipelineBarrier {
+        .srcStage = .{ .begin = true },
+        .dstStage = .{ .transfer = true },
+        .imageTapes = (
+          &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+            .{
+              .image = resources.visibilitySurfaceImage,
+              .layout = .transferDst,
+              .accessFlags = .{ .transferDst = true, },
+            },
+            .{
+              .image = resources.outputColorImage,
+              .layout = .transferDst,
+              .accessFlags = .{ .transferDst = true, },
+            },
+          }
+        ),
+        .bufferTapes = (
+          &[_] mtr.command.PipelineBarrier.BufferTapeAction {
+            .{
+              .buffer = resources.microRastEmitMetadataBuffer,
+              .accessFlags = .{ .transferDst = true, },
+            }, .{
+              .buffer = resources.tiledRastDispatchBuffer,
+              .accessFlags = .{ .transferDst = true, },
+            },
+          }
+        ),
+      },
+    );
+
+    try commandBufferRecorder.append(
+      mtr.command.TransferMemory {
+        .bufferSrc = resources.microRastEmitMetadataClearingBuffer,
+        .bufferDst = resources.microRastEmitMetadataBuffer,
+        .offsetSrc = 0, .offsetDst = 0, .length = @sizeOf(u64),
+      },
+    );
+
+    try commandBufferRecorder.append(
+      mtr.command.TransferMemory {
+        .bufferSrc = resources.tiledRastDispatchClearingBuffer,
+        .bufferDst = resources.tiledRastDispatchBuffer,
+        .offsetSrc = 0, .offsetDst = 0,
+        .length = @sizeOf(u32)*4*16*16,
+      },
+    );
+
+    try commandBufferRecorder.append(
+      mtr.command.UploadTexelToImageMemory {
+        .image = resources.visibilitySurfaceImage,
+        .rgba = [4] f32 { 0.0, 0.0, 0.0, 0.0, },
+      },
+    );
+
+    try commandBufferRecorder.append(
+      mtr.command.UploadTexelToImageMemory {
+        .image = resources.outputColorImage,
+        .rgba = [4] f32 { 0.0, 0.0, 0.0, 0.0, },
+      },
+    );
+
+    try commandBufferRecorder.append(
+      mtr.command.PipelineBarrier {
+        .srcStage = .{ .transfer = true },
+        .dstStage = .{ .end = true },
+        .imageTapes = (
+          &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+            .{
+              .image = resources.visibilitySurfaceImage,
+              .layout = .general,
+              .accessFlags = .{},
+            }, .{
+              .image = resources.outputColorImage,
+              .layout = .general,
+              .accessFlags = .{},
+            },
+          }
+        ),
+      },
+    );
+  }
+
+  // -- record commands [ PER FRAME ]-------------------------------------------
+  const renderPerFrameCommandBuffer : mtr.command.BufferIdx = (
+    try mtrCtx.createCommandBuffer(.{
+      .commandPool = commandPoolScratch,
+      .label = "render-per-frame",
+    })
+  );
+  var renderPerFrameTapes : mtr.util.FinalizedCommandBufferTapes = undefined;
+  defer renderPerFrameTapes.deinit();
+  {
+    var commandBufferRecorder = (
+      try mtr.util.CommandBufferRecorder.init(.{
+        .ctx = &mtrCtx,
+        .commandBuffer = renderPerFrameCommandBuffer,
+        .commandBufferTapes = &[_] mtr.util.FinalizedCommandBufferTapes {
+          renderClearPerFrameTapes,
+        },
+        .bufferTapes = &[_] mtr.memory.BufferTape {
+          .{ .buffer = resources.microRastEmitMetadataBuffer, },
+          .{ .buffer = resources.microRastEmitTriangleIDsBuffer, },
+          .{ .buffer = resources.intermediaryAttributeAssemblyBuffer, },
+          .{ .buffer = resources.tiledRastEmitTriangleIDsBuffer, },
+          .{ .buffer = resources.tiledRastDispatchBuffer, },
+        },
+        .imageTapes = &[_] mtr.memory.ImageTape {
+            .{
+              .image = resources.visibilitySurfaceImage,
+              .layout = .general,
+              .accessFlags = .{ .shaderRead = true, },
+            }, .{
+              .image = resources.outputColorImage,
+              .layout = .general,
+              .accessFlags = .{ .shaderWrite = true, },
+            }, .{
+              .image = resources.testTextureImage,
+              .layout = .general,
+              .accessFlags = .{ .shaderRead = true, },
+            }
+        },
+      })
+    );
+    defer renderPerFrameTapes = (
+      commandBufferRecorder.finishWithFinalizedTapes()
+    );
 
     // -- MESH pipeline --
     std.log.info("-----  MESH PIPELINE  -----", .{});
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.PipelineBarrier {
         .srcStage = .{ .begin = true },
         .dstStage = .{ .compute = true },
         .bufferTapes = (
           &[_] mtr.command.PipelineBarrier.BufferTapeAction {
             .{
-              .tape = &resources.microRastEmitMetadataTape,
+              .buffer = resources.microRastEmitMetadataBuffer,
               .accessFlags = .{ .shaderWrite = true, .shaderRead = true },
             }, .{
-              .tape = &resources.microRastEmitTriangleIDsTape,
+              .buffer = resources.microRastEmitTriangleIDsBuffer,
               .accessFlags = .{ .shaderWrite = true },
             }, .{
-              .tape = &resources.intermediaryAttributeAssemblyTape,
+              .buffer = resources.intermediaryAttributeAssemblyBuffer,
               .accessFlags = .{ .shaderWrite = true },
             }, .{
-              .tape = &resources.tiledRastEmitTriangleIDsTape,
+              .buffer = resources.tiledRastEmitTriangleIDsBuffer,
               .accessFlags = .{ .shaderWrite = true, },
             }, .{
-              .tape = &resources.tiledRastDispatchTape,
+              .buffer = resources.tiledRastDispatchBuffer,
               .accessFlags = .{ .shaderRead = true, .shaderWrite = true, },
             },
           }
@@ -1220,13 +1536,13 @@ pub fn main() !void {
       },
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.BindPipeline {
         .pipeline = meshPipeline.pipeline,
       }
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.BindDescriptorSets {
         .pipelineLayout = meshPipeline.pipelineLayout,
         .descriptorSets = (
@@ -1235,7 +1551,7 @@ pub fn main() !void {
       }
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.Dispatch {
         .width = ((sceneMetadata.numTrianglesInScene+15)/16),
         .height = 1, .depth = 1,
@@ -1245,14 +1561,14 @@ pub fn main() !void {
     // -- MICRORAST pipeline --
     std.log.info("-----  MICRO PIPELINE  -----", .{});
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.PipelineBarrier {
         .srcStage = .{ .compute = true },
         .dstStage = .{ .compute = true },
         .imageTapes = (
           &[_] mtr.command.PipelineBarrier.ImageTapeAction {
             .{
-              .tape = &resources.visibilitySurfaceImageTape,
+              .image = resources.visibilitySurfaceImage,
               .layout = .general,
               .accessFlags = .{ .shaderWrite = true, .shaderRead = true, },
             },
@@ -1261,13 +1577,13 @@ pub fn main() !void {
         .bufferTapes = (
           &[_] mtr.command.PipelineBarrier.BufferTapeAction {
             .{
-              .tape = &resources.microRastEmitTriangleIDsTape,
+              .buffer = resources.microRastEmitTriangleIDsBuffer,
               .accessFlags = .{ .shaderRead = true },
             }, .{
-              .tape = &resources.microRastEmitMetadataTape,
+              .buffer = resources.microRastEmitMetadataBuffer,
               .accessFlags = .{ .shaderRead = true },
             }, .{
-              .tape = &resources.intermediaryAttributeAssemblyTape,
+              .buffer = resources.intermediaryAttributeAssemblyBuffer,
               .accessFlags = .{ .shaderRead = true },
             },
           }
@@ -1275,13 +1591,13 @@ pub fn main() !void {
       },
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.BindPipeline {
         .pipeline = microRastPipeline.pipeline,
       }
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.BindDescriptorSets {
         .pipelineLayout = microRastPipeline.pipelineLayout,
         .descriptorSets = (
@@ -1290,7 +1606,7 @@ pub fn main() !void {
       },
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.Dispatch {
         .width = (sceneMetadata.numTrianglesInScene+15)/16,
         .height = 1,
@@ -1299,14 +1615,14 @@ pub fn main() !void {
     );
 
     // -- TILED DIVISION pipeline ---
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.PipelineBarrier {
         .srcStage = .{ .compute = true },
         .dstStage = .{ .compute = true },
         .bufferTapes = (
           &[_] mtr.command.PipelineBarrier.BufferTapeAction {
             .{
-              .tape = &resources.tiledRastDispatchTape,
+              .buffer = resources.tiledRastDispatchBuffer,
               .accessFlags = .{ .shaderRead = true, .shaderWrite = true, },
             },
           }
@@ -1314,13 +1630,13 @@ pub fn main() !void {
       },
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.BindPipeline {
         .pipeline = tiledIndirectDivisionPipeline.pipeline,
       }
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.BindDescriptorSets {
         .pipelineLayout = tiledIndirectDivisionPipeline.pipelineLayout,
         .descriptorSets = (
@@ -1331,21 +1647,21 @@ pub fn main() !void {
       },
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.Dispatch { .width = 1, .height = 1, .depth = 1 },
     );
 
     // -- TILED pipeline --
     std.log.info("-----  TILED PIPELINE  -----", .{});
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.PipelineBarrier {
         .srcStage = .{ .compute = true },
         .dstStage = .{ .compute = true },
         .imageTapes = (
           &[_] mtr.command.PipelineBarrier.ImageTapeAction {
             .{
-              .tape = &resources.visibilitySurfaceImageTape,
+              .image = resources.visibilitySurfaceImage,
               .layout = .general,
               .accessFlags = .{ .shaderWrite = true, .shaderRead = true, },
             }
@@ -1354,10 +1670,22 @@ pub fn main() !void {
         .bufferTapes = (
           &[_] mtr.command.PipelineBarrier.BufferTapeAction {
             .{
-              .tape = &resources.tiledRastEmitTriangleIDsTape,
+              .buffer = resources.tiledRastEmitTriangleIDsBuffer,
               .accessFlags = .{ .shaderRead = true, },
-            }, .{
-              .tape = &resources.tiledRastDispatchTape,
+            }
+          }
+        ),
+      },
+    );
+
+    try commandBufferRecorder.append(
+      mtr.command.PipelineBarrier {
+        .srcStage = .{ .compute = true },
+        .dstStage = .{ .indirectDispatch = true },
+        .bufferTapes = (
+          &[_] mtr.command.PipelineBarrier.BufferTapeAction {
+            .{
+              .buffer = resources.tiledRastDispatchBuffer,
               .accessFlags = .{ .shaderRead = true, .indirectCommand = true, },
             },
           }
@@ -1365,13 +1693,13 @@ pub fn main() !void {
       },
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.BindPipeline {
         .pipeline = tiledRastPipeline.pipeline,
       }
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.BindDescriptorSets {
         .pipelineLayout = tiledRastPipeline.pipelineLayout,
         .descriptorSets = (
@@ -1381,7 +1709,7 @@ pub fn main() !void {
     );
 
     if (!useMultiDispatchIndirect) {
-      commandBufferRecorder.append(
+      try commandBufferRecorder.append(
         mtr.command.Dispatch {
           .width = 16,
           .height = 16,
@@ -1394,14 +1722,14 @@ pub fn main() !void {
         // TODO it might be possible to allow multi indirect dispatch command
         //      on MTR side as long as certain constraints on pushconstants can
         //      be made
-        commandBufferRecorder.append(
+        try commandBufferRecorder.append(
           mtr.command.PushConstants {
             .pipelineLayout = tiledRastPipeline.pipelineLayout,
             .memory = std.mem.sliceAsBytes(&[_] u32 { indirectIt, }),
           },
         );
 
-        commandBufferRecorder.append(
+        try commandBufferRecorder.append(
           mtr.command.DispatchIndirect {
             .buffer = resources.tiledRastDispatchBuffer,
             .offset = indirectIt*@sizeOf(u32)*4,
@@ -1413,22 +1741,22 @@ pub fn main() !void {
     // -- MATERIAL
     std.log.info("-----  MATERIAL PIPELINE  -----", .{});
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.PipelineBarrier {
         .srcStage = .{ .compute = true },
         .dstStage = .{ .compute = true },
         .imageTapes = (
           &[_] mtr.command.PipelineBarrier.ImageTapeAction {
             .{
-              .tape = &resources.visibilitySurfaceImageTape,
+              .image = resources.visibilitySurfaceImage,
               .layout = .general,
               .accessFlags = .{ .shaderRead = true, },
             }, .{
-              .tape = &resources.outputColorImageTape,
+              .image = resources.outputColorImage,
               .layout = .general,
               .accessFlags = .{ .shaderWrite = true, },
             }, .{
-              .tape = &resources.testTextureImageTape,
+              .image = resources.testTextureImage,
               .layout = .general,
               .accessFlags = .{ .shaderRead = true, },
             }
@@ -1437,13 +1765,13 @@ pub fn main() !void {
       },
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.BindPipeline {
         .pipeline = materialPipeline.pipeline,
       }
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.BindDescriptorSets {
         .pipelineLayout = materialPipeline.pipelineLayout,
         .descriptorSets = (
@@ -1452,40 +1780,78 @@ pub fn main() !void {
       },
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.Dispatch {
         .width = imageWidth/16, .height = imageHeight/8, .depth = 1,
       }
     );
+
+    // final layout transitions
+    try commandBufferRecorder.append(
+      mtr.command.PipelineBarrier {
+        .srcStage = .{ .compute = true },
+        .dstStage = .{ .end = true },
+        .imageTapes = (
+          &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+            .{
+              .image = resources.visibilitySurfaceImage,
+              .layout = .general,
+              .accessFlags = .{ },
+            },
+            .{
+              .image = resources.testTextureImage,
+              .layout = .general,
+              .accessFlags = .{ },
+            },
+            .{
+              .image = resources.outputColorImage,
+              .layout = .general,
+              .accessFlags = .{ },
+            },
+          }
+        ),
+      },
+    );
   }
 
-  // -- submit/save results & exit ---------------------------------------------
+  { // -- submit/save results & exit -------------------------------------------
+    printTime("created pipeline", timer);
+    timer.reset();
 
-  printTime("created pipeline", timer);
-  timer.reset();
+    try mtrCtx.submitCommandBufferToQueue(
+      queue, renderClearPerFrameCommandBuffer, .{}
+    );
 
-  try mtrCtx.submitCommandBufferToQueue(queue, commandBufferScratch, .{});
-  mtrCtx.queueFlush(queue);
+    try mtrCtx.submitCommandBufferToQueue(
+      queue, renderPerFrameCommandBuffer, .{}
+    );
 
-  printTime("rendered image", timer);
+    try mtrCtx.queueFlush(queue);
 
-  timer.reset();
+    printTime("rendered image", timer);
 
-  try mtr.util.screenshot.storeImageToFile(
-    &mtrCtx, .{
-      .queue = queue,
-      .srcStage = .{ .compute = true },
-      .commandBuffer = commandBufferScratch,
-      .imageToStore = resources.outputColorImage,
-      .imageToStoreTape = &resources.outputColorImageTape,
-      .filename = "simple-triangle.ppm",
-    }
-  );
+    timer.reset();
 
-  printTime("saved image, will now try displaying to screen", timer);
+    try mtr.util.screenshot.storeImageToFile(
+      &mtrCtx, .{
+        .queue = queue,
+        .srcStage = .{ .compute = true },
+        .commandBuffer = commandBufferScratch,
+        .imageToStore = resources.outputColorImage,
+        .imageToStoreLayout = .general,
+        .imageToStoreAccessFlags = .{ .shaderWrite=true, },
+        .filename = "simple-triangle.ppm",
+      }
+    );
+
+    printTime("saved image", timer);
+  }
+
 
   var frameCount : u32 = 0;
+  var cameraTemp : f32 = 0;
 
+  std.log.info("{s}", .{"now displaying to screen"});
   while (!mtrCtx.shouldWindowClose()) {
     timer.reset();
     mtrCtx.pollEvents();
@@ -1499,27 +1865,70 @@ pub fn main() !void {
 
     const currentSwapchainIdx = basicSwapchain.currentImageIndex;
 
+    try mtrCtx.submitCommandBufferToQueue(
+      queue, renderClearPerFrameCommandBuffer, .{}
+    );
+
+    try mtrCtx.submitCommandBufferToQueue(
+      queue, renderPerFrameCommandBuffer, .{}
+    );
+
+    // TODO use a host writable uniform buffer maybe
+    { // upload
+      const cameraOrigin = [3] f32 {
+        std.math.sin(cameraTemp)*sceneMetadata.maxBounds[2]*3.5,
+        0.2,
+        std.math.cos(cameraTemp)*sceneMetadata.maxBounds[2]*3.5
+        + (4.0+std.math.sin(cameraTemp*0.5)*6.0)
+      };
+      cameraTemp = cameraTemp+0.006;
+      sceneMetadata.cameraOrigin = cameraOrigin;
+
+      try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
+        .queue = queue,
+        .commandBuffer = commandBufferScratch,
+        .bufferDst = resources.inputAttributeAssemblyMetadataBuffer,
+        .memoryToUpload = (
+          std.mem.sliceAsBytes(
+            &[_] u32 {
+              sceneMetadata.numTrianglesInScene,
+              @bitCast(u32, cameraOrigin[0]),
+              @bitCast(u32, cameraOrigin[1]),
+              @bitCast(u32, cameraOrigin[2]),
+            },
+          )
+        ),
+      });
+
+      try mtrCtx.queueFlush(queue);
+    }
+
     {
       var commandBufferRecorder = (
-        mtrCtx.createCommandBufferRecorder(commandBufferScratch)
+        try mtr.util.CommandBufferRecorder.init(.{
+          .ctx = &mtrCtx,
+          .commandBuffer = commandBufferScratch,
+          .commandBufferTapes = &[_] mtr.util.FinalizedCommandBufferTapes {
+            renderClearPerFrameTapes,
+            renderPerFrameTapes,
+          },
+        })
       );
       defer commandBufferRecorder.finish();
 
       // prepare swapchain to be copied into
-      commandBufferRecorder.append(
+      try commandBufferRecorder.append(
         mtr.command.PipelineBarrier {
           .srcStage = .{ .begin = true },
           .dstStage = .{ .transfer = true },
           .imageTapes = (
             &[_] mtr.command.PipelineBarrier.ImageTapeAction {
               .{
-                .tape = (
-                  &basicSwapchain.imageTapes.items[currentSwapchainIdx]
-                ),
+                .image = basicSwapchain.images.items[currentSwapchainIdx],
                 .layout = .transferDst,
                 .accessFlags = .{ },
               }, .{
-                .tape = &resources.outputColorImageTape,
+                .image = resources.outputColorImage,
                 .layout = .transferSrc,
                 .accessFlags = .{ },
               },
@@ -1529,7 +1938,7 @@ pub fn main() !void {
       );
 
       // copy image into swapchain
-      commandBufferRecorder.append(
+      try commandBufferRecorder.append(
         mtr.command.TransferImageToImage {
           .imageSrc = resources.outputColorImage,
           .imageDst = basicSwapchain.images.items[currentSwapchainIdx],
@@ -1539,17 +1948,19 @@ pub fn main() !void {
       );
 
       // prepare swapchain for presentation
-      commandBufferRecorder.append(
+      try commandBufferRecorder.append(
         mtr.command.PipelineBarrier {
           .srcStage = .{ .transfer = true },
           .dstStage = .{ .end = true },
           .imageTapes = (
             &[_] mtr.command.PipelineBarrier.ImageTapeAction {
               .{
-                .tape = (
-                  &basicSwapchain.imageTapes.items[currentSwapchainIdx]
-                ),
+                .image = basicSwapchain.images.items[currentSwapchainIdx],
                 .layout = .present,
+                .accessFlags = .{ },
+              }, .{
+                .image = resources.outputColorImage,
+                .layout = .general,
                 .accessFlags = .{ },
               },
             }
@@ -1587,15 +1998,16 @@ pub fn main() !void {
       ),
     });
 
-    mtrCtx.queueFlush(queue);
+    try mtrCtx.queueFlush(queue);
 
-    if (frameCount == 0) {
-      frameCount = 5000;
+    if (frameCount == 500) {
+      frameCount = 0;
       printTime("frame ms", timer);
     }
+    frameCount += 1;
   }
 
-  mtrCtx.queueFlush(queue);
+  try mtrCtx.queueFlush(queue);
 
   std.log.info("exitting application", .{});
 }

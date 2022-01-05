@@ -8,7 +8,8 @@ pub const StoreImageToFileParams = struct {
   srcStage : mtr.pipeline.StageFlags,
   commandBuffer : mtr.command.BufferIdx,
   imageToStore : mtr.image.Idx,
-  imageToStoreTape : * mtr.memory.ImageTape,
+  imageToStoreLayout : mtr.image.Layout,
+  imageToStoreAccessFlags : mtr.memory.AccessFlags,
   filename : [] const u8,
 };
 
@@ -38,6 +39,7 @@ pub fn storeImageToFile(
     bufferToStoreImage = try (
       heapRegionAllocator.createBuffer(.{
         .offset = 0,
+        .label = "save-image-mappping",
         .length = mtImage.getImageByteLength(),
         .usage = mtr.buffer.Usage { .transferDst = true },
         .queueSharing = .exclusive,
@@ -48,27 +50,37 @@ pub fn storeImageToFile(
 
   {
     var commandBufferRecorder = (
-      mtrCtx.createCommandBufferRecorder(params.commandBuffer)
+      try mtr.util.CommandBufferRecorder.init(.{
+        .ctx = mtrCtx,
+        .commandBuffer = params.commandBuffer,
+        .imageTapes = &[_] mtr.memory.ImageTape {
+          .{
+            .image = params.imageToStore,
+            .layout = params.imageToStoreLayout,
+            .accessFlags = params.imageToStoreAccessFlags,
+          }
+        },
+      })
     );
     defer commandBufferRecorder.finish();
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.PipelineBarrier {
         .srcStage = params.srcStage,
         .dstStage = .{ .transfer = true },
         .imageTapes = (
           &[_] mtr.command.PipelineBarrier.ImageTapeAction {
             mtr.command.PipelineBarrier.ImageTapeAction {
-              .tape = params.imageToStoreTape,
+              .image = params.imageToStore,
               .layout = .transferSrc,
-              .accessFlags = .{ .transferRead = true },
+              .accessFlags = .{ .transferDst = true },
             },
           }
         ),
       },
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.TransferImageToBuffer {
         .imageSrc = params.imageToStore,
         .bufferDst = bufferToStoreImage,
@@ -76,10 +88,19 @@ pub fn storeImageToFile(
       }
     );
 
-    commandBufferRecorder.append(
+    try commandBufferRecorder.append(
       mtr.command.PipelineBarrier {
         .srcStage = .{ .transfer = true },
-        .dstStage = .{ .host = true },
+        .dstStage = .{ .end = true },
+        .imageTapes = (
+          &[_] mtr.command.PipelineBarrier.ImageTapeAction {
+            mtr.command.PipelineBarrier.ImageTapeAction {
+              .image = params.imageToStore,
+              .layout = .general,
+              .accessFlags = .{ },
+            },
+          }
+        ),
       },
     );
   }
@@ -88,7 +109,7 @@ pub fn storeImageToFile(
     params.queue, params.commandBuffer, .{}
   );
   // TODO replace with fence
-  mtrCtx.queueFlush(params.queue);
+  try mtrCtx.queueFlush(params.queue);
 
   {
     var mappedMemory = try mtrCtx.mapMemoryBuffer(.{

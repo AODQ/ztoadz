@@ -24,18 +24,21 @@ pub const AccessFlags = packed struct {
   uniformRead : bool = false,
   colorAttachmentRead : bool = false,
   colorAttachmentWrite : bool = false,
-  transferRead : bool = false,
-  transferWrite : bool = false,
+  transferDst : bool = false,
+  transferSrc : bool = false,
   hostRead : bool = false,
   hostWrite : bool = false,
   indirectCommand : bool = false,
 };
 
 pub const Semaphore = struct {
-  contextIdx : SemaphoreId,
+  label : [:0] const u8,
+
+  contextIdx : SemaphoreId = 0,
 };
 
 pub const Fence = struct {
+  label : [:0] const u8,
   signaled : bool = false,
 
   contextIdx : FenceId = 0,
