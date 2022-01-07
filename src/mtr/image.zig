@@ -33,11 +33,11 @@ pub const Sample = enum {
 };
 
 pub const Channel = enum {
-  R, RGB, RGBA,
+  R, RGB, BGR, RGBA,
 
   pub fn channelLength(self : @This()) u64 {
     return switch(self) {
-      .R => 1, .RGB => 3, .RGBA => 4,
+      .R => 1, .BGR => 3, .RGB => 3, .RGBA => 4,
     };
   }
 
@@ -47,6 +47,7 @@ pub const Channel = enum {
 pub const ByteFormat = enum {
   uint8,
   uint64,
+  uint8Unorm,
   // uint16, uint32, float32
 
   pub const jsonStringify = mtr.util.json.JsonEnumMixin.jsonStringify;
@@ -54,6 +55,7 @@ pub const ByteFormat = enum {
   pub fn byteLength(self : @This()) u64 {
     return switch(self) {
       .uint8 => 1,
+      .uint8Unorm => 1,
       .uint64 => 8,
       // uint16 => 2, uint32 => 4, float32 => 4,
     };

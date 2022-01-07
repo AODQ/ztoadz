@@ -17,6 +17,9 @@ layout (set = 0, binding = 1) buffer InputAttributeAssemblyMetadata {
   float cameraOriginX;
   float cameraOriginY;
   float cameraOriginZ;
+  float cameraTargetX;
+  float cameraTargetY;
+  float cameraTargetZ;
 };
 
 layout (set = 0, binding = 2) buffer IntermediaryAttributeAssembly {
@@ -80,7 +83,7 @@ vec4 mtEntry(const uint inputId) {
   const mat4 view = (
     LookAt(
       vec3(cameraOriginX, cameraOriginY, cameraOriginZ),
-      vec3(0.0f),
+      vec3(cameraTargetX, cameraTargetY, cameraTargetZ),
       vec3(0.0f, -1.0f, 0.0)
     )
   );
@@ -121,7 +124,7 @@ void main() {
   intermediaryAttributes[triangleId*6+5] = inputAttributes[triangleId*6+5];
 
   // hack
-  const ivec2 viewportDim = ivec2(2048, 2048);
+  const ivec2 viewportDim = ivec2(1024, 1024);
 
   // after this point origin is in clipspace
   #define toScreen(v) v.xy = (viewportDim * v.xy)

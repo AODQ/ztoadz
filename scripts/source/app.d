@@ -46,9 +46,10 @@ mixin Main.parseCLIArgs!(Arguments, (args) {
   auto scene = (
     aiImportFile(
       toUTFz!(char*)(args.inputFilename),
-      aiProcess_Triangulate
-    | aiProcess_PreTransformVertices
-    | aiProcess_GenUVCoords
+      0
+    //  aiProcess_Triangulate
+    //| aiProcess_PreTransformVertices
+    //| aiProcess_GenUVCoords
     )
   );
   if (!scene) {

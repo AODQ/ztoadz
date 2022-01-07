@@ -69,8 +69,6 @@ void main() {
     vec2 uvcoord = vec2(itX, itY) + vec2(0.5f);
     float interDepth = computeTriangleDepthAtUv(tri, uvcoord);
     uint32_t triangleIdU32 = uint32_t(triangleId);
-    triangleIdU32 &= 0x0000FFFF;
-    triangleIdU32 |= 0xDEAD0000;
     if (interDepth > 0.0f && interDepth <= 1.0f) {
       uint32_t depthU32 = floatBitsToUint(interDepth);
       uint64_t triangleStore = triangleIdU32 | (uint64_t(depthU32) << 32);

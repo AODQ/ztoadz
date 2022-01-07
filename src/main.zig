@@ -3,6 +3,8 @@ const util = @import("util/package.zig");
 const modelio = @import("../src/modelio/package.zig");
 const std = @import("std");
 
+const glfw = @import("mtr/backend/vulkan/glfw.zig");
+
 fn compareValues(failStr : anytype, actual : u8, expected : u8,) void {
   _ = std.testing.expect(actual == expected) catch {};
   if (actual != expected) {
@@ -10,8 +12,8 @@ fn compareValues(failStr : anytype, actual : u8, expected : u8,) void {
   }
 }
 
-const imageWidth = 2048;
-const imageHeight = 2048;
+const imageWidth = 1024;
+const imageHeight = 1024;
 
 const tileWidth = 16;
 const tileHeight = 16;
@@ -37,7 +39,7 @@ pub fn dumbTextureRead(alloc : std.mem.Allocator) !std.ArrayList(u8) {
   );
   defer file.close();
 
-  var lineBuffer = [3] u8 { 0, 0, 0, };
+  var lineBuffer : [2049] u8 = undefined;
 
   // first parse ppm header
 
@@ -74,8 +76,11 @@ pub fn dumbTextureRead(alloc : std.mem.Allocator) !std.ArrayList(u8) {
     const bytes = try file.readAll(lineBuffer[0..]);
 
     if (bytes == 0) break;
-    try texels.appendSlice(lineBuffer[0..bytes]);
-    try texels.append(255);
+    var byteIt : usize = 0;
+    while (byteIt < bytes) : (byteIt += 3) {
+      try texels.appendSlice(lineBuffer[byteIt..byteIt+3]);
+      try texels.append(255);
+    }
   }
 
   return texels;
@@ -122,6 +127,7 @@ pub const BasicScene = struct {
   minBounds : [3] f32 = [3] f32 {9999, 9999, 9999},
   maxBounds : [3] f32 = [3] f32 {-9999, -9999, -9999},
   cameraOrigin : [3] f32,
+  cameraTarget : [3] f32,
 };
 
 pub const BasicSwapchain = struct {
@@ -216,7 +222,9 @@ pub fn main() !void {
 
   const queue : mtr.queue.Idx = (
     try mtrCtx.constructQueue(.{
-      .workType = mtr.queue.WorkType{.transfer = true, .render = true},
+      .workType = mtr.queue.WorkType{
+        .transfer = true, .render = true, .compute=true
+      },
     })
   );
 
@@ -270,7 +278,7 @@ pub fn main() !void {
           .samplesPerTexel = mtr.image.Sample.s1,
           .arrayLayers = 1,
           .mipmapLevels = 1,
-          .byteFormat = mtr.image.ByteFormat.uint8,
+          .byteFormat = mtr.image.ByteFormat.uint8Unorm,
           .channels = mtr.image.Channel.RGBA,
           .usage = .{
             .transferSrc = true, .transferDst = true, .storage = true,
@@ -314,7 +322,7 @@ pub fn main() !void {
     resources.testTextureImageView = try (
       mtrCtx.createImageView(.{
         .label = "test-diffuse-texture-view",
-        .image = resources.testTextureImage, 
+        .image = resources.testTextureImage,
       })
     );
 
@@ -450,7 +458,7 @@ pub fn main() !void {
         heapRegionAllocator.createBuffer(.{
           .label = "input-attribute-assembly-metadata",
           .offset = 0,
-          .length = @sizeOf(u32)*1 + @sizeOf(f32)*3,
+          .length = @sizeOf(u32)*1 + @sizeOf(f32)*6,
           .usage = (
             mtr.buffer.Usage { .bufferStorage = true, .transferDst = true }
           ),
@@ -463,7 +471,9 @@ pub fn main() !void {
       const cameraOrigin = [3] f32 {
         0.5, 0.2, sceneMetadata.maxBounds[2]*1.5
       };
+      const cameraTarget = [3] f32 { 0.0, 0.0, 0.0 };
       sceneMetadata.cameraOrigin = cameraOrigin;
+      sceneMetadata.cameraTarget = cameraTarget;
 
       try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
         .queue = queue,
@@ -476,6 +486,9 @@ pub fn main() !void {
               @bitCast(u32, cameraOrigin[0]),
               @bitCast(u32, cameraOrigin[1]),
               @bitCast(u32, cameraOrigin[2]),
+              @bitCast(u32, cameraTarget[0]),
+              @bitCast(u32, cameraTarget[1]),
+              @bitCast(u32, cameraTarget[2]),
             },
           )
         ),
@@ -1818,6 +1831,39 @@ pub fn main() !void {
     printTime("created pipeline", timer);
     timer.reset();
 
+    { // upload temp matrix
+      const cameraOrigin = [3] f32 {
+        std.math.sin(@floatCast(f32, 0.0))*sceneMetadata.maxBounds[2]*3.5,
+        0.2,
+        std.math.cos(@floatCast(f32, 0.0))*sceneMetadata.maxBounds[2]*3.5
+        + (4.0+std.math.sin(@floatCast(f32, 0.5))*6.0)
+      };
+      sceneMetadata.cameraOrigin = cameraOrigin;
+      const cameraTarget = [3] f32 { 0.0, 0.0, 0.0 };
+      sceneMetadata.cameraTarget = cameraTarget;
+
+      try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
+        .queue = queue,
+        .commandBuffer = commandBufferScratch,
+        .bufferDst = resources.inputAttributeAssemblyMetadataBuffer,
+        .memoryToUpload = (
+          std.mem.sliceAsBytes(
+            &[_] u32 {
+              sceneMetadata.numTrianglesInScene,
+              @bitCast(u32, cameraOrigin[0]),
+              @bitCast(u32, cameraOrigin[1]),
+              @bitCast(u32, cameraOrigin[2]),
+              @bitCast(u32, cameraTarget[0]),
+              @bitCast(u32, cameraTarget[1]),
+              @bitCast(u32, cameraTarget[2]),
+            },
+          )
+        ),
+      });
+
+      try mtrCtx.queueFlush(queue);
+    }
+
     try mtrCtx.submitCommandBufferToQueue(
       queue, renderClearPerFrameCommandBuffer, .{}
     );
@@ -1849,12 +1895,77 @@ pub fn main() !void {
 
 
   var frameCount : u32 = 0;
-  var cameraTemp : f32 = 0;
+
+  var mouseTotal = [2] f32 { 0, 0 };
+  var cameraOrigin = [3] f32 { 0, 0, 0 };
+  var prevMousePos = [2] f64 { -1.0, -1.0 };
+
+  var mouseTotalMiddle = [2] f32 { 0, 0 };
 
   std.log.info("{s}", .{"now displaying to screen"});
   while (!mtrCtx.shouldWindowClose()) {
     timer.reset();
     mtrCtx.pollEvents();
+
+    // input
+    {
+      var xpos : f64 = undefined;
+      var ypos : f64 = undefined;
+      glfw.c.glfwGetCursorPos(
+        mtrCtx.glfwWindow,
+        &xpos,
+        &ypos
+      );
+
+      var deltaX : f32 = 0.0;
+      var deltaY : f32 = 0.0;
+
+      deltaX = @floatCast(f32, prevMousePos[0] - xpos)/imageWidth;
+      deltaY = @floatCast(f32, prevMousePos[1] - ypos)/imageHeight;
+
+      prevMousePos[0] = xpos;
+      prevMousePos[1] = ypos;
+
+      if (
+        glfw.c.glfwGetMouseButton(
+          mtrCtx.glfwWindow, glfw.c.GLFW_MOUSE_BUTTON_MIDDLE
+        ) > 0
+      ) {
+        mouseTotalMiddle[0] -= deltaX*sceneMetadata.maxBounds[0]*0.2;
+        mouseTotalMiddle[1] += deltaY*sceneMetadata.maxBounds[1]*0.2;
+      }
+
+      if (
+        glfw.c.glfwGetMouseButton(
+          mtrCtx.glfwWindow, glfw.c.GLFW_MOUSE_BUTTON_LEFT
+        ) > 0
+      ) {
+        mouseTotal[0] += deltaX;
+      }
+
+      if (
+        glfw.c.glfwGetMouseButton(
+          mtrCtx.glfwWindow, glfw.c.GLFW_MOUSE_BUTTON_RIGHT
+        ) > 0
+      ) {
+        mouseTotal[1] -= deltaY;
+      }
+
+      sceneMetadata.cameraTarget[0] = mouseTotalMiddle[0];
+      sceneMetadata.cameraTarget[1] = mouseTotalMiddle[1];
+
+      var dist : f32 = 0.5+mouseTotal[1]*sceneMetadata.maxBounds[2]*0.035;
+
+      cameraOrigin = [3] f32 {
+        (
+          std.math.sin(mouseTotal[0])*sceneMetadata.maxBounds[2]*dist
+          + mouseTotalMiddle[0]
+        ),
+        mouseTotalMiddle[1],
+        std.math.cos(mouseTotal[0])*sceneMetadata.maxBounds[2]*dist,
+      };
+    }
+
     basicSwapchain.currentImageIndex = (
       try mtrCtx.swapchainAcquireNextImage(
         basicSwapchain.swapchain,
@@ -1875,13 +1986,6 @@ pub fn main() !void {
 
     // TODO use a host writable uniform buffer maybe
     { // upload
-      const cameraOrigin = [3] f32 {
-        std.math.sin(cameraTemp)*sceneMetadata.maxBounds[2]*3.5,
-        0.2,
-        std.math.cos(cameraTemp)*sceneMetadata.maxBounds[2]*3.5
-        + (4.0+std.math.sin(cameraTemp*0.5)*6.0)
-      };
-      cameraTemp = cameraTemp+0.006;
       sceneMetadata.cameraOrigin = cameraOrigin;
 
       try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
@@ -1895,6 +1999,9 @@ pub fn main() !void {
               @bitCast(u32, cameraOrigin[0]),
               @bitCast(u32, cameraOrigin[1]),
               @bitCast(u32, cameraOrigin[2]),
+              @bitCast(u32, sceneMetadata.cameraTarget[0]),
+              @bitCast(u32, sceneMetadata.cameraTarget[1]),
+              @bitCast(u32, sceneMetadata.cameraTarget[2]),
             },
           )
         ),

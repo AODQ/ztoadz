@@ -1,5 +1,6 @@
 const mtr = @import("package.zig");
 const std = @import("std");
+const glfw = @import("backend/vulkan/glfw.zig");
 
 const backend = @import("backend/vulkan/package.zig");
 
@@ -49,6 +50,8 @@ pub const Context = struct {
   rasterizer : * backend.context.Rasterizer,
   optimization : mtr.RenderingOptimizationLevel,
 
+  glfwWindow : * glfw.c.GLFWwindow,
+
   allocIdx : u64, // temporary FIXME
 
   // this is a weird 'hack', where we gauruntee only one context can be writing
@@ -67,6 +70,7 @@ pub const Context = struct {
     windowTitle : [*:0] const u8 = "zTOADz",
     floating : bool = true,
     resizable : bool = false,
+    glfwWindow : ? * glfw.c.GLFWwindow = null,
   };
 
   pub fn init(
@@ -79,8 +83,30 @@ pub const Context = struct {
       std.debug.panic("could not allocate rendering context", .{});
     };
 
+    // -- initiate --
+    if (glfw.c.glfwInit() != glfw.c.GLFW_TRUE) {
+      std.log.err("could not initialize glfw", .{});
+      unreachable;
+    }
+
+    var copyInfo = info;
+
+    glfw.c.glfwWindowHint(glfw.c.GLFW_CLIENT_API, glfw.c.GLFW_NO_API);
+    glfw.c.glfwWindowHint(glfw.c.GLFW_FLOATING, @boolToInt(info.floating));
+    glfw.c.glfwWindowHint(glfw.c.GLFW_RESIZABLE, @boolToInt(info.resizable));
+    copyInfo.glfwWindow = (
+      glfw.c.glfwCreateWindow(
+        @intCast(c_int, info.width),
+        @intCast(c_int, info.height),
+        info.windowTitle, null, null,
+      )
+    ) orelse {
+      std.log.err("could not initialize glfw", .{});
+      unreachable;
+    };
+
     allocatedRasterizer .* = (
-      backend.context.Rasterizer.init(info)
+      backend.context.Rasterizer.init(copyInfo)
       catch |err| {
         std.log.err(
           "{s} ({s})",
@@ -95,6 +121,7 @@ pub const Context = struct {
 
     var self : @This() = undefined;
     self = .{
+      .glfwWindow = copyInfo.glfwWindow.?,
       .heaps = @TypeOf(self.heaps).init(info.allocator),
       .queues = @TypeOf(self.queues).init(info.allocator),
       .heapRegions = @TypeOf(self.heapRegions).init(info.allocator),

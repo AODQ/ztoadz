@@ -65,11 +65,19 @@ pub fn imageToVkFormat(image : mtr.image.Primitive) vk.Format {
     .uint8 => switch (image.channels) {
       .R => vk.Format.r8Uint,
       .RGB => vk.Format.r8g8b8Uint,
+      .BGR => vk.Format.b8g8r8Uint,
       .RGBA => vk.Format.r8g8b8a8Uint,
+    },
+    .uint8Unorm => switch (image.channels) {
+      .R => vk.Format.r8Unorm,
+      .RGB => vk.Format.r8g8b8Unorm,
+      .BGR => vk.Format.b8g8r8Unorm,
+      .RGBA => vk.Format.r8g8b8a8Unorm,
     },
     .uint64 => switch (image.channels) {
       .R => vk.Format.r64Uint,
       .RGB => vk.Format.r64g64b64Uint,
+      .BGR => unreachable,
       .RGBA => vk.Format.r64g64b64a64Uint,
     },
   };
@@ -715,22 +723,6 @@ pub const Rasterizer = struct {
       .pDisabledValidationFeatures = undefined,
     };
 
-    // initiate GLFW first
-    if (glfw.c.glfwInit() != glfw.c.GLFW_TRUE) {
-      return error.GlfwInitFailed;
-    }
-
-    glfw.c.glfwWindowHint(glfw.c.GLFW_CLIENT_API, glfw.c.GLFW_NO_API);
-    glfw.c.glfwWindowHint(glfw.c.GLFW_FLOATING, @boolToInt(info.floating));
-    glfw.c.glfwWindowHint(glfw.c.GLFW_RESIZABLE, @boolToInt(info.resizable));
-    const window = (
-      glfw.c.glfwCreateWindow(
-        @intCast(c_int, info.width),
-        @intCast(c_int, info.height),
-        info.windowTitle, null, null,
-      )
-    ) orelse return error.GlfwWindowInitFailed;
-
     // then initial vk dispatch loaders
 
     var vkb = try (
@@ -755,7 +747,7 @@ pub const Rasterizer = struct {
 
     var surface : vk.SurfaceKHR = undefined;
     std.debug.assert(
-      glfw.glfwCreateWindowSurface(instance, window, null, &surface)
+      glfw.glfwCreateWindowSurface(instance, info.glfwWindow.?, null, &surface)
       == .success
     );
 
@@ -834,7 +826,7 @@ pub const Rasterizer = struct {
       .devices = devices,
       .vki = vki,
       .vkd = &devices.items[0],
-      .glfwWindow = window,
+      .glfwWindow = info.glfwWindow.?,
     };
 
     errdefer self.vki.destroyinstance(self.instance, null);
@@ -1219,18 +1211,19 @@ pub const Rasterizer = struct {
       + @intCast(i32, @boolToInt(queue.workType.compute))
     );
     var vdq : ? VulkanDeviceQueue = null;
+    // TODO rework this
     if (numQueues > 1) {
       vdq = VulkanDeviceQueue.init(self.vkd.*, self.vkd.deviceQueue.gtcIdx);
     }
-    if (queue.workType.compute) {
+    else if (queue.workType.compute) {
       vdq = VulkanDeviceQueue.init(self.vkd.*, self.vkd.deviceQueue.computeIdx);
     }
-    if (queue.workType.render) {
+    else if (queue.workType.render) {
       vdq = (
         VulkanDeviceQueue.init(self.vkd.*, self.vkd.deviceQueue.graphicsIdx)
       );
     }
-    if (queue.workType.transfer) {
+    else if (queue.workType.transfer) {
       vdq = (
         VulkanDeviceQueue.init(self.vkd.*, self.vkd.deviceQueue.transferIdx)
       );
@@ -1777,17 +1770,18 @@ pub const Rasterizer = struct {
         var vkImageSrc = self.images.getPtr(action.imageSrc).?;
         var vkImageDst = self.images.getPtr(action.imageDst).?;
 
-        self.vkd.vkdd.cmdCopyImage2KHR(
+        self.vkd.vkdd.cmdBlitImage2KHR(
           vkCommandBuffer,
-          vk.CopyImageInfo2KHR {
+          vk.BlitImageInfo2KHR {
             .srcImage = vkImageSrc.handle,
             .srcImageLayout = vk.ImageLayout.transferSrcOptimal,
             .dstImage = vkImageDst.handle,
             .dstImageLayout = vk.ImageLayout.transferDstOptimal,
             .regionCount = 1,
+            .filter = .nearest,
             .pRegions = @ptrCast(
-              [*] const vk.ImageCopy2KHR,
-              &vk.ImageCopy2KHR {
+              [*] const vk.ImageBlit2KHR,
+              &vk.ImageBlit2KHR {
                 .srcSubresource = vk.ImageSubresourceLayers {
                   .aspectMask = .{ .colorBit = true },
                   .mipLevel = action.srcMipmapLayer,
@@ -1800,21 +1794,34 @@ pub const Rasterizer = struct {
                   .baseArrayLayer = action.dstArrayLayerBegin,
                   .layerCount = action.arrayLayerCount,
                 },
-                .srcOffset = vk.Offset3D {
-                  .x = @intCast(i32, action.srcXOffset),
-                  .y = @intCast(i32, action.srcYOffset),
-                  .z = @intCast(i32, action.srcZOffset),
-                },
-                .dstOffset = vk.Offset3D {
-                  .x = @intCast(i32, action.dstXOffset),
-                  .y = @intCast(i32, action.dstYOffset),
-                  .z = @intCast(i32, action.dstZOffset),
-                },
-                .extent = vk.Extent3D {
-                  .width = action.width,
-                  .height = action.height,
-                  .depth = action.depth,
-                },
+                .srcOffsets = (
+                  [2] vk.Offset3D {
+                    vk.Offset3D {
+                      .x = @intCast(i32, action.srcXOffset),
+                      .y = @intCast(i32, action.srcYOffset),
+                      .z = @intCast(i32, action.srcZOffset),
+                    },
+                    vk.Offset3D {
+                      .x = @intCast(i32, action.srcXOffset+action.width),
+                      .y = @intCast(i32, action.srcYOffset+action.height),
+                      .z = @intCast(i32, action.srcZOffset+action.depth),
+                    },
+                  }
+                ),
+                .dstOffsets = (
+                  [2] vk.Offset3D {
+                    vk.Offset3D {
+                      .x = @intCast(i32, action.dstXOffset),
+                      .y = @intCast(i32, action.dstYOffset),
+                      .z = @intCast(i32, action.dstZOffset),
+                    },
+                    vk.Offset3D {
+                      .x = @intCast(i32, action.dstXOffset+action.width),
+                      .y = @intCast(i32, action.dstYOffset+action.height),
+                      .z = @intCast(i32, action.dstZOffset+action.depth),
+                    },
+                  }
+                ),
               }
             ),
           },
@@ -2467,8 +2474,8 @@ pub const Rasterizer = struct {
           .samplesPerTexel = .s1,
           .arrayLayers = 1,
           .mipmapLevels = 1,
-          .byteFormat = .uint8,
-          .channels = .RGB,
+          .byteFormat = .uint8Unorm,
+          .channels = .BGR,
           .usage = .{ .transferDst = true },
           .normalized = true,
           .queueSharing = .exclusive,

@@ -8,8 +8,8 @@ layout (local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
 layout (set = 0, binding = 0, r64ui)
   uniform readonly u64image2D visibilitySurfaceImage;
 
-layout (set = 0, binding = 1, rgba8ui)
-  uniform writeonly uimage2D outputColorImage;
+layout (set = 0, binding = 1, rgba8)
+  uniform writeonly image2D outputColorImage;
 
 layout (set = 0, binding = 2) buffer TriangleIntermediaryAssembly {
   vec4 intermediaryAttributes[];
@@ -26,8 +26,9 @@ layout (set = 0, binding = 4, rgba8ui)
   uniform readonly uimage2D inputDiffuseImage;
 
 vec4 texelRead(vec2 uv) {
+  uv.y = 1.0f-uv.y;
   ivec2 tuv = clamp(ivec2(uv * vec2(1024)), ivec2(0), ivec2(1024));
-  return vec4(imageLoad(inputDiffuseImage, tuv))/vec4(255.0f);
+  return pow(vec4(imageLoad(inputDiffuseImage, tuv))/vec4(255.0f), vec4(2.2f));
 }
 
 uint murmurHash11(uint src) {
@@ -91,14 +92,14 @@ vec4 mtEntry(const vec2 uv, const ivec2 dispatchId, const ivec2 viewportDim) {
   /*   ); */
   /* } */
 
-  if (((triangleIdU32 >> 16) & 0xFFFF) == 0xDEAD) {
-    return vec4(
-      hash11(triangleIdU32),
-      hash11(232+triangleIdU32),
-      hash11(3729+triangleIdU32),
-      1.0f
-    );
-  }
+  /* if (((triangleIdU32 >> 16) & 0xFFFF) == 0xDEAD) { */
+  /*   return vec4( */
+  /*     hash11(triangleIdU32), */
+  /*     hash11(232+triangleIdU32), */
+  /*     hash11(3729+triangleIdU32), */
+  /*     1.0f */
+  /*   ); */
+  /* } */
 
   vec4 t0 = intermediaryAttributes[triangleIdU32*6 + 0];
   vec4 t1 = intermediaryAttributes[triangleIdU32*6 + 1];
@@ -165,8 +166,10 @@ vec4 mtEntry(const vec2 uv, const ivec2 dispatchId, const ivec2 viewportDim) {
   return texelRead(triUv);
 }
 
-uvec4 toSrgb(const vec4 inp) {
-  return uvec4(clamp(inp * vec4(255.0f), 0.0f, 255.0f));
+vec4 toSrgb(const vec4 inp) {
+  return (
+    clamp(vec4(pow(inp.rgb, vec3(1.0f/2.2f)), inp.a), vec4(0.0), vec4(1.0f))
+  );
 }
 
 void main() {
