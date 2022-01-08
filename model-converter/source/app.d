@@ -4,6 +4,7 @@ import std.math, std.algorithm;
 import std.range;
 import std.stdio;
 import std.utf;
+import std.json;
 
 static struct Arguments {
   @NamedArgument("input", "i")
@@ -60,6 +61,12 @@ mixin Main.parseCLIArgs!(Arguments, (args) {
 
   File file = File(args.outputFilename, "wb");
   writefln("converting scene to %s", args.outputFilename);
+
+  JSONValue j = [
+    "version": "0.0",
+  ];
+
+  j.object["scene"].array ~= ;
 
   for (uint meshIt = 0; meshIt < scene.mNumMeshes; ++ meshIt) {
     writefln("mesh %s / %s", meshIt+1, scene.mNumMeshes);
@@ -166,5 +173,8 @@ mixin Main.parseCLIArgs!(Arguments, (args) {
       }
     }
   }
+
   writefln("Success!");
+
+  writefln(j.toString);
 });

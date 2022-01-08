@@ -21,30 +21,58 @@ an additional amount of redundant information stored.
 # File Format
 
 The file format is in JSON, and there is also a general-purpose utility script
-  that can port most files to MTR. each node can have metadata used to extend
+  that can port most files to MTR. each node can have extension used to extend
   the format w/ callbacks
 
 {
   "version": "0",
-  "metadata": [],
+  "extension": [],
   "cameras": [
     {"view-matrix": [...]},
   ],
+  "lights": [
+    {
+      "type": "directional", # also point
+      "origin": [5, 5, 5],
+      "direction": [1.0, 0.0, 0.0],
+    },
+  ],
+  "images": [
+    "whatever.ppm",
+  ],
   "scene": [
-    "node": {
-      "children": [1, 2, ...],
-      "model-matrix": [...],
-      "attribute-elements": 120,
-      "attributes": [
-        {
-          "type": "origin", # uv-coord, normal
-          "format": "rgb16",
-          "byte-offset": 0,
-          "byte-stride": 0, # if 0 assume sizeof format
-        },
-      ],
-    }
-  ]
+    0 # top level nodes
+  ],
+  "nodes": {
+    "children": [1, 2, ...],
+    "model-matrix": [...],
+    "attribute-elements": 120,
+    "material": {
+      "diffuse-texture": { # specular, occlusion, emissive, metallicRoughness
+        "index": 0,
+      },
+      "diffuse-factor": [ 1.0, 1.0, 1.0, 1.0 ],
+      "diffuse-linearize": false, # whether to linearize (pow 2.2) image
+      "normal-texture": {
+        "index": 1,
+      },
+      # although extension is avail everywhere, it will probably be must
+      # useful here
+      "extension": {},
+    },
+    "indices": {
+      "format": "r32",
+      "byte-offset": 0,
+    },
+    "attributes": [
+      {
+        "type": "origin", # uv-coord, normal
+        "format": "rgb16",
+        "byte-offset": 0,
+        "byte-stride": 0, # if 0 assume sizeof format
+      },
+    ],
+  }
 }
 
 # API

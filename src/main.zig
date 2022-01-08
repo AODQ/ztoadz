@@ -35,7 +35,7 @@ pub fn dumbTextureRead(alloc : std.mem.Allocator) !std.ArrayList(u8) {
   errdefer texels.deinit();
 
   const file = try (
-    std.fs.cwd().openFile("models/ah/ah.ppm", .{ .read = true })
+    std.fs.cwd().openFile("models/rock-moss/diffuse8k.ppm", .{ .read = true })
   );
   defer file.close();
 
@@ -954,7 +954,6 @@ pub fn main() !void {
       })
     );
 
-
     tiledIndirectDivisionPipeline.pipeline = try (
       mtrCtx.createComputePipeline(.{
         .label = "tiled-indirect-division",
@@ -963,7 +962,6 @@ pub fn main() !void {
         .layout = tiledIndirectDivisionPipeline.pipelineLayout,
       })
     );
-
 
     tiledIndirectDivisionPipeline.descriptorSet = try(
       mtrCtx.createDescriptorSet(.{

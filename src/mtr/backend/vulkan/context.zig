@@ -584,8 +584,7 @@ fn constructDevices(
     )
   );
 
-  try devices.resize(deviceLen);
-  for (physicalDevices) |physicalDevice, it| {
+  physicalDeviceLbl: for (physicalDevices) |physicalDevice, it| {
     // TODO check if the device is suitable for this application
 
     var extensions = std.ArrayList(vk.ExtensionProperties).init(allocator);
@@ -619,15 +618,18 @@ fn constructDevices(
       }
 
       if (!exists) {
-        _ = std.c.printf(
-          "ERROR: req extension '%s' doesn't exist!\n", extReq
+        std.log.info(
+          "device ID {} doesn't support extension '{s}'",
+          .{it, extReq}
         );
+        continue :physicalDeviceLbl;
       }
     }
 
-    devices.items[it] = try (
+    std.log.info("found suitable device ID {}", .{it});
+    (try devices.addOne()).* = try (
       VulkanDeviceContext.init(
-        allocator, vki, physicalDevice, deviceExtensions
+        allocator, vki, physicalDevice, deviceExtensions,
       )
     );
   }
@@ -825,7 +827,7 @@ pub const Rasterizer = struct {
       .instance = instance,
       .devices = devices,
       .vki = vki,
-      .vkd = &devices.items[0],
+      .vkd = &devices.items[devices.items.len-1], // TODO device picker
       .glfwWindow = info.glfwWindow.?,
     };
 
