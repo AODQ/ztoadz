@@ -4,6 +4,7 @@ const modelio = @import("../src/modelio/package.zig");
 const std = @import("std");
 
 const glfw = @import("mtr/backend/vulkan/glfw.zig");
+const renderer = @import("renderer.zig");
 
 fn compareValues(failStr : anytype, actual : u8, expected : u8,) void {
   _ = std.testing.expect(actual == expected) catch {};
@@ -97,29 +98,6 @@ pub const BasicPipeline = struct {
   pipeline : mtr.pipeline.ComputeIdx,
 };
 
-pub const BasicResources = struct {
-  outputColorImage : mtr.image.Idx,
-  outputColorImageView : mtr.image.ViewIdx,
-
-  testTextureImage : mtr.image.Idx,
-  testTextureImageView : mtr.image.ViewIdx,
-
-  visibilitySurfaceImage : mtr.image.Idx,
-  visibilitySurfaceImageView : mtr.image.ViewIdx,
-
-  inputAttributeAssemblyBuffer : mtr.buffer.Idx,
-  inputAttributeAssemblyMetadataBuffer : mtr.buffer.Idx,
-
-  intermediaryAttributeAssemblyBuffer : mtr.buffer.Idx,
-
-  microRastEmitTriangleIDsBuffer : mtr.buffer.Idx,
-  microRastEmitMetadataBuffer : mtr.buffer.Idx,
-  microRastEmitMetadataClearingBuffer : mtr.buffer.Idx,
-
-  tiledRastEmitTriangleIDsBuffer : mtr.buffer.Idx,
-  tiledRastDispatchBuffer : mtr.buffer.Idx,
-  tiledRastDispatchClearingBuffer : mtr.buffer.Idx,
-};
 
 pub const BasicScene = struct {
   numTrianglesInScene : u32,
@@ -263,8 +241,7 @@ pub fn main() !void {
   defer basicSwapchain.deinit();
 
   // -- create resources -------------------------------------------------------
-  var resources : BasicResources = undefined;
-
+  var resources : renderer.BasicResources = undefined;
   { // output color image
     {
       var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
@@ -377,9 +354,10 @@ pub fn main() !void {
   var sceneMetadata : BasicScene = undefined;
 
   { // input attribute assembly buffer
-
     {
-      var scene = try modelio.loadScene("models/crown/scene.gltf");
+      var scene = (
+        try modelio.loadScene("models/rock-moss/rock_moss_set_02_8k.gltf")
+      );
       defer modelio.freeScene(scene);
 
       std.log.info("scene: {}", .{scene.*});
