@@ -30,61 +30,61 @@ pub fn printTime(prepend : [] const u8, timer : std.time.Timer) void {
   std.log.info("{s}: {} s {} ms {} us", .{prepend, sec, ms, us});
 }
 
-pub fn dumbTextureRead(alloc : std.mem.Allocator) !std.ArrayList(u8) {
-  var texels = std.ArrayList(u8).init(alloc);
-  errdefer texels.deinit();
+// pub fn dumbTextureRead(alloc : std.mem.Allocator) !std.ArrayList(u8) {
+//   var texels = std.ArrayList(u8).init(alloc);
+//   errdefer texels.deinit();
 
-  const file = try (
-    std.fs.cwd().openFile("models/rock-moss/diffuse8k.ppm", .{ .read = true })
-  );
-  defer file.close();
+//   const file = try (
+//     std.fs.cwd().openFile("models/rock-moss/diffuse8k.ppm", .{ .read = true })
+//   );
+//   defer file.close();
 
-  var lineBuffer : [2049] u8 = undefined;
+//   var lineBuffer : [2049] u8 = undefined;
 
-  // first parse ppm header
+//   // first parse ppm header
 
-  // remove P6\n
-  _ = try file.readAll(lineBuffer[0..3]);
+//   // remove P6\n
+//   _ = try file.readAll(lineBuffer[0..3]);
 
-  // get width/height
-  var widthBuffer = [4*3] u8 { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, };
-  var heightBuffer = [4*3] u8 { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, };
+//   // get width/height
+//   var widthBuffer = [4*3] u8 { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, };
+//   var heightBuffer = [4*3] u8 { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, };
 
-  var widthBufferLen : usize = 0;
-  while (true) {
-    _ = try file.readAll(lineBuffer[0..1]);
-    if (lineBuffer[0] == ' ') break;
-    widthBuffer[widthBufferLen] = lineBuffer[0];
-    widthBufferLen += 1;
-  }
+//   var widthBufferLen : usize = 0;
+//   while (true) {
+//     _ = try file.readAll(lineBuffer[0..1]);
+//     if (lineBuffer[0] == ' ') break;
+//     widthBuffer[widthBufferLen] = lineBuffer[0];
+//     widthBufferLen += 1;
+//   }
 
-  var heightBufferLen  : usize= 0;
-  while (true) {
-    _ = try file.readAll(lineBuffer[0..1]);
-    if (lineBuffer[0] == '\n') break;
-    heightBuffer[heightBufferLen] = lineBuffer[0];
-    heightBufferLen += 1;
-  }
+//   var heightBufferLen  : usize= 0;
+//   while (true) {
+//     _ = try file.readAll(lineBuffer[0..1]);
+//     if (lineBuffer[0] == '\n') break;
+//     heightBuffer[heightBufferLen] = lineBuffer[0];
+//     heightBufferLen += 1;
+//   }
 
-  std.log.info("width: {s} height: {s}", .{widthBuffer, heightBuffer});
+//   std.log.info("width: {s} height: {s}", .{widthBuffer, heightBuffer});
 
-  // remove 255\n and start parsing
-  _ = try file.readAll(lineBuffer[0..3]);
-  _ = try file.readAll(lineBuffer[0..1]);
+//   // remove 255\n and start parsing
+//   _ = try file.readAll(lineBuffer[0..3]);
+//   _ = try file.readAll(lineBuffer[0..1]);
 
-  while (true) {
-    const bytes = try file.readAll(lineBuffer[0..]);
+//   while (true) {
+//     const bytes = try file.readAll(lineBuffer[0..]);
 
-    if (bytes == 0) break;
-    var byteIt : usize = 0;
-    while (byteIt < bytes) : (byteIt += 3) {
-      try texels.appendSlice(lineBuffer[byteIt..byteIt+3]);
-      try texels.append(255);
-    }
-  }
+//     if (bytes == 0) break;
+//     var byteIt : usize = 0;
+//     while (byteIt < bytes) : (byteIt += 3) {
+//       try texels.appendSlice(lineBuffer[byteIt..byteIt+3]);
+//       try texels.append(255);
+//     }
+//   }
 
-  return texels;
-}
+//   return texels;
+// }
 
 // pipelines:
 // mesh -> microrast -> tiledrast -> material
@@ -326,22 +326,22 @@ pub fn main() !void {
       })
     );
 
-    { // memory upload
-      var textureTexels = try dumbTextureRead(debugAllocator.allocator());
-      defer textureTexels.deinit();
+    // { // memory upload
+    //   var textureTexels = try dumbTextureRead(debugAllocator.allocator());
+    //   defer textureTexels.deinit();
 
-      std.log.info("texels to copy: {}", .{textureTexels.items.len});
-      try mtr.util.stageMemoryToImage(&mtrCtx, .{
-        .queue = queue,
-        .commandBuffer = commandBufferScratch,
-        .imageDst = resources.testTextureImage,
-        .imageDstLayout = .uninitialized,
-        .imageDstAccessFlags = .{ },
-        .memoryToUpload = textureTexels.items,
-      });
+    //   std.log.info("texels to copy: {}", .{textureTexels.items.len});
+    //   try mtr.util.stageMemoryToImage(&mtrCtx, .{
+    //     .queue = queue,
+    //     .commandBuffer = commandBufferScratch,
+    //     .imageDst = resources.testTextureImage,
+    //     .imageDstLayout = .uninitialized,
+    //     .imageDstAccessFlags = .{ },
+    //     .memoryToUpload = textureTexels.items,
+    //   });
 
-      try mtrCtx.queueFlush(queue);
-    }
+    //   try mtrCtx.queueFlush(queue);
+    // }
   }
 
   { // visibility surface
@@ -377,6 +377,16 @@ pub fn main() !void {
   var sceneMetadata : BasicScene = undefined;
 
   { // input attribute assembly buffer
+
+    {
+      var scene = try modelio.loadScene("models/crown/scene.gltf");
+      defer modelio.freeScene(scene);
+
+      std.log.info("scene: {}", .{scene.*});
+    }
+
+    if (true)
+      return;
 
     var origins = std.ArrayList(f32).init(debugAllocator.allocator());
     defer origins.deinit();

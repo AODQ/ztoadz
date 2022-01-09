@@ -91,6 +91,7 @@ pub fn build(builder: * std.build.Builder) !void {
   exe.linkSystemLibrary("c");
 
   exe.linkSystemLibrary("glfw");
+  exe.linkSystemLibrary("cgltf");
   exe.linkSystemLibrary("vulkan");
 
   builder.default_step.dependOn(&exe.step);
