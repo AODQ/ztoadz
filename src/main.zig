@@ -4,6 +4,7 @@ const modelio = @import("../src/modelio/package.zig");
 const std = @import("std");
 
 const glfw = @import("mtr/backend/vulkan/glfw.zig");
+
 const renderer = @import("renderer.zig");
 
 fn compareValues(failStr : anytype, actual : u8, expected : u8,) void {
@@ -97,7 +98,6 @@ pub const BasicPipeline = struct {
   pipelineLayout : mtr.pipeline.LayoutIdx,
   pipeline : mtr.pipeline.ComputeIdx,
 };
-
 
 pub const BasicScene = struct {
   numTrianglesInScene : u32,
@@ -242,6 +242,7 @@ pub fn main() !void {
 
   // -- create resources -------------------------------------------------------
   var resources : renderer.BasicResources = undefined;
+
   { // output color image
     {
       var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
@@ -353,301 +354,309 @@ pub fn main() !void {
 
   var sceneMetadata : BasicScene = undefined;
 
-  { // input attribute assembly buffer
-    {
-      var scene = (
-        try modelio.loadScene("models/rock-moss/rock_moss_set_02_8k.gltf")
-      );
-      defer modelio.freeScene(scene);
+  //{ // input attribute assembly buffer
 
-      std.log.info("scene: {}", .{scene.*});
-    }
+  //  {
+  //    var scene = try modelio.loadScene("models/crown/scene.gltf");
+  //    defer modelio.freeScene(scene);
 
-    if (true)
-      return;
+  //    std.log.info("scene: {}", .{scene.*});
+  //  }
 
-    var origins = std.ArrayList(f32).init(debugAllocator.allocator());
-    defer origins.deinit();
+  //  var origins = std.ArrayList(f32).init(debugAllocator.allocator());
+  //  defer origins.deinit();
 
-    { // load scene
-      {
-        var vdl = modelio.mesh.CreateInfo_VertexDescriptorLayout.init();
-        vdl.vertexAttributes[
-          @enumToInt(modelio.mesh.VertexDescriptorAttributeType.origin)
-        ] = .{ .bindingIndex = 0, .underlyingType = .float32_3, };
-        _ = vdl;
+  //  { // load scene
+  //    {
+  //      var vdl = modelio.mesh.CreateInfo_VertexDescriptorLayout.init();
+  //      vdl.vertexAttributes[
+  //        @enumToInt(modelio.mesh.VertexDescriptorAttributeType.origin)
+  //      ] = .{ .bindingIndex = 0, .underlyingType = .float32_3, };
+  //      _ = vdl;
 
-        var modelFileBuffer : [1024] u8 = undefined;
-        var modelFile : [] const u8 = (
-          try std.fs.cwd().readFile("default-scene.csv", modelFileBuffer[0..])
-        );
-        modelFile = std.mem.trimRight(u8, modelFile, "\n");
+  //      var modelFileBuffer : [1024] u8 = undefined;
+  //      var modelFile : [] const u8 = (
+  //        try std.fs.cwd().readFile("default-scene.csv", modelFileBuffer[0..])
+  //      );
+  //      modelFile = std.mem.trimRight(u8, modelFile, "\n");
 
-        std.log.info("will load '{s}'", .{modelFile});
-        var scene = try modelio.loader.DumbSceneLoad(
-          debugAllocator.allocator(),
-          modelFile
-          //"models/lpshead/head.mtr"
-        );
-        errdefer scene.deinit();
-        defer scene.deinit();
+  //      std.log.info("will load '{s}'", .{modelFile});
+  //      var scene = try modelio.loader.DumbSceneLoad(
+  //        debugAllocator.allocator(),
+  //        modelFile
+  //        //"models/lpshead/head.mtr"
+  //      );
+  //      errdefer scene.deinit();
+  //      defer scene.deinit();
 
-        // stupid
-        for (scene.items) |vtx, it| {
-          (try origins.addOne()).* = vtx;
-          sceneMetadata.maxBounds[it%3] = (
-            std.math.max(sceneMetadata.maxBounds[it%3], vtx)
-          );
-          sceneMetadata.minBounds[it%3] = (
-            std.math.min(sceneMetadata.minBounds[it%3], vtx)
-          );
-        }
-      }
-      sceneMetadata.numTrianglesInScene = @intCast(u32, origins.items.len/8/3);
-      sceneMetadata.numFloatsInScene    = @intCast(u32, origins.items.len);
-    }
+  //      // stupid
+  //      for (scene.items) |vtx, it| {
+  //        (try origins.addOne()).* = vtx;
+  //        sceneMetadata.maxBounds[it%3] = (
+  //          std.math.max(sceneMetadata.maxBounds[it%3], vtx)
+  //        );
+  //        sceneMetadata.minBounds[it%3] = (
+  //          std.math.min(sceneMetadata.minBounds[it%3], vtx)
+  //        );
+  //      }
+  //    }
+  //    sceneMetadata.numTrianglesInScene = @intCast(u32, origins.items.len/8/3);
+  //    sceneMetadata.numFloatsInScene    = @intCast(u32, origins.items.len);
+  //  }
 
-    { // create buffer
-      var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
-      defer _ = heapRegionAllocator.finish();
+  //  { // create buffer
+  //    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+  //    defer _ = heapRegionAllocator.finish();
 
-      resources.inputAttributeAssemblyBuffer = try (
-        heapRegionAllocator.createBuffer(.{
-          .label = "input-attribute-assembly",
-          .offset = 0,
-          .length = @sizeOf(f32)*sceneMetadata.numFloatsInScene,
-          .usage = (
-            mtr.buffer.Usage { .bufferStorage = true, .transferDst = true }
-          ),
-          .queueSharing = .exclusive,
-        })
-      );
-    }
+  //    resources.inputAttributeAssemblyBuffer = try (
+  //      heapRegionAllocator.createBuffer(.{
+  //        .label = "input-attribute-assembly",
+  //        .offset = 0,
+  //        .length = @sizeOf(f32)*sceneMetadata.numFloatsInScene,
+  //        .usage = (
+  //          mtr.buffer.Usage { .bufferStorage = true, .transferDst = true }
+  //        ),
+  //        .queueSharing = .exclusive,
+  //      })
+  //    );
+  //  }
 
-    { // load & upload resources
-      try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
-        .queue = queue,
-        .commandBuffer = commandBufferScratch,
-        .bufferDst = resources.inputAttributeAssemblyBuffer,
-        .memoryToUpload = (
-          std.mem.sliceAsBytes(origins.items)
-        )
-      });
-      try mtrCtx.queueFlush(queue);
-    }
-  }
+  //  { // load & upload resources
+  //    try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
+  //      .queue = queue,
+  //      .commandBuffer = commandBufferScratch,
+  //      .bufferDst = resources.inputAttributeAssemblyBuffer,
+  //      .memoryToUpload = (
+  //        std.mem.sliceAsBytes(origins.items)
+  //      )
+  //    });
+  //    try mtrCtx.queueFlush(queue);
+  //  }
+  //}
 
-  { // input attribute assembly metadata buffer
-    { // create buffer
-      var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
-      defer _ = heapRegionAllocator.finish();
+  // { // input attribute assembly metadata buffer
+  //   { // create buffer
+  //     var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+  //     defer _ = heapRegionAllocator.finish();
 
-      resources.inputAttributeAssemblyMetadataBuffer = try (
-        heapRegionAllocator.createBuffer(.{
-          .label = "input-attribute-assembly-metadata",
-          .offset = 0,
-          .length = @sizeOf(u32)*1 + @sizeOf(f32)*6,
-          .usage = (
-            mtr.buffer.Usage { .bufferStorage = true, .transferDst = true }
-          ),
-          .queueSharing = .exclusive,
-        })
-      );
-    }
+  //     resources.inputAttributeAssemblyMetadataBuffer = try (
+  //       heapRegionAllocator.createBuffer(.{
+  //         .label = "input-attribute-assembly-metadata",
+  //         .offset = 0,
+  //         .length = @sizeOf(u32)*1 + @sizeOf(f32)*6,
+  //         .usage = (
+  //           mtr.buffer.Usage { .bufferStorage = true, .transferDst = true }
+  //         ),
+  //         .queueSharing = .exclusive,
+  //       })
+  //     );
+  //   }
 
-    { // upload
-      const cameraOrigin = [3] f32 {
-        0.5, 0.2, sceneMetadata.maxBounds[2]*1.5
-      };
-      const cameraTarget = [3] f32 { 0.0, 0.0, 0.0 };
-      sceneMetadata.cameraOrigin = cameraOrigin;
-      sceneMetadata.cameraTarget = cameraTarget;
+  //   { // upload
+  //     const cameraOrigin = [3] f32 {
+  //       0.5, 0.2, sceneMetadata.maxBounds[2]*1.5
+  //     };
+  //     const cameraTarget = [3] f32 { 0.0, 0.0, 0.0 };
+  //     sceneMetadata.cameraOrigin = cameraOrigin;
+  //     sceneMetadata.cameraTarget = cameraTarget;
 
-      try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
-        .queue = queue,
-        .commandBuffer = commandBufferScratch,
-        .bufferDst = resources.inputAttributeAssemblyMetadataBuffer,
-        .memoryToUpload = (
-          std.mem.sliceAsBytes(
-            &[_] u32 {
-              sceneMetadata.numTrianglesInScene,
-              @bitCast(u32, cameraOrigin[0]),
-              @bitCast(u32, cameraOrigin[1]),
-              @bitCast(u32, cameraOrigin[2]),
-              @bitCast(u32, cameraTarget[0]),
-              @bitCast(u32, cameraTarget[1]),
-              @bitCast(u32, cameraTarget[2]),
-            },
-          )
-        ),
-      });
+  //     try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
+  //       .queue = queue,
+  //       .commandBuffer = commandBufferScratch,
+  //       .bufferDst = resources.inputAttributeAssemblyMetadataBuffer,
+  //       .memoryToUpload = (
+  //         std.mem.sliceAsBytes(
+  //           &[_] u32 {
+  //             sceneMetadata.numTrianglesInScene,
+  //             @bitCast(u32, cameraOrigin[0]),
+  //             @bitCast(u32, cameraOrigin[1]),
+  //             @bitCast(u32, cameraOrigin[2]),
+  //             @bitCast(u32, cameraTarget[0]),
+  //             @bitCast(u32, cameraTarget[1]),
+  //             @bitCast(u32, cameraTarget[2]),
+  //           },
+  //         )
+  //       ),
+  //     });
 
-      try mtrCtx.queueFlush(queue);
-    }
-  }
+  //     try mtrCtx.queueFlush(queue);
+  //   }
+  // }
 
   std.log.info("scene metadata: {}", .{sceneMetadata});
 
-  { // create intermediary attribute assembly buffer
-    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
-    defer _ = heapRegionAllocator.finish();
+  // { // create intermediary attribute assembly buffer
+  //   var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+  //   defer _ = heapRegionAllocator.finish();
 
-    resources.intermediaryAttributeAssemblyBuffer = try (
-      heapRegionAllocator.createBuffer(.{
-        .label = "intermediary-attribute-assembly",
-        .offset = 0,
-        .length = @sizeOf(f32)*sceneMetadata.numFloatsInScene,
-        .usage = (
-          mtr.buffer.Usage { .bufferStorage = true }
-        ),
-        .queueSharing = .exclusive,
-      })
-    );
-  }
+  //   resources.intermediaryAttributeAssemblyBuffer = try (
+  //     heapRegionAllocator.createBuffer(.{
+  //       .label = "intermediary-attribute-assembly",
+  //       .offset = 0,
+  //       .length = @sizeOf(f32)*sceneMetadata.numFloatsInScene,
+  //       .usage = (
+  //         mtr.buffer.Usage { .bufferStorage = true }
+  //       ),
+  //       .queueSharing = .exclusive,
+  //     })
+  //   );
+  // }
 
-  { // create microrasterizer emit triangles ID buffer
-    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
-    defer _ = heapRegionAllocator.finish();
+  // { // create microrasterizer emit triangles ID buffer
+  //   var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+  //   defer _ = heapRegionAllocator.finish();
 
-    resources.microRastEmitTriangleIDsBuffer = try (
-      heapRegionAllocator.createBuffer(.{
-        .label = "microrasterizer-emit-triangles-ID",
-        .offset = 0,
-        .length = @sizeOf(u64)*sceneMetadata.numFloatsInScene,
-        .usage = (
-          mtr.buffer.Usage { .bufferStorage = true }
-        ),
-        .queueSharing = .exclusive,
-      })
-    );
-  }
+  //   resources.microRastEmitTriangleIDsBuffer = try (
+  //     heapRegionAllocator.createBuffer(.{
+  //       .label = "microrasterizer-emit-triangles-ID",
+  //       .offset = 0,
+  //       .length = @sizeOf(u64)*sceneMetadata.numFloatsInScene,
+  //       .usage = (
+  //         mtr.buffer.Usage { .bufferStorage = true }
+  //       ),
+  //       .queueSharing = .exclusive,
+  //     })
+  //   );
+  // }
 
-  { // create microrasterizer emit metadata buffer
-    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
-    defer _ = heapRegionAllocator.finish();
+  // { // create microrasterizer emit metadata buffer
+  //   var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+  //   defer _ = heapRegionAllocator.finish();
 
-    resources.microRastEmitMetadataBuffer = try (
-      heapRegionAllocator.createBuffer(.{
-        .label = "microrasterizer-emit-metadata",
-        .offset = 0,
-        .length = @sizeOf(u64),
-        .usage = (
-          mtr.buffer.Usage {
-            .transferDst = true,
-            .transferSrc = true,
-            .bufferStorage = true
-          }
-        ),
-        .queueSharing = .exclusive,
-      })
-    );
-  }
+  //   resources.microRastEmitMetadataBuffer = try (
+  //     heapRegionAllocator.createBuffer(.{
+  //       .label = "microrasterizer-emit-metadata",
+  //       .offset = 0,
+  //       .length = @sizeOf(u64),
+  //       .usage = (
+  //         mtr.buffer.Usage {
+  //           .transferDst = true,
+  //           .transferSrc = true,
+  //           .bufferStorage = true
+  //         }
+  //       ),
+  //       .queueSharing = .exclusive,
+  //     })
+  //   );
+  // }
 
-  { // create microrasterizer emit metadata staging buffer
-    {
-      var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
-      defer _ = heapRegionAllocator.finish();
+  // { // create microrasterizer emit metadata staging buffer
+  //   {
+  //     var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+  //     defer _ = heapRegionAllocator.finish();
 
-      resources.microRastEmitMetadataClearingBuffer = try (
-        heapRegionAllocator.createBuffer(.{
-          .label = "microrasterizer-emit-metadata-staging",
-          .offset = 0,
-          .length = @sizeOf(u64),
-          .usage = (
-            mtr.buffer.Usage {
-              .transferSrc = true, .transferDst = true, .bufferStorage = true,
-            }
-          ),
-          .queueSharing = .exclusive,
-        })
-      );
-    }
+  //     resources.microRastEmitMetadataClearingBuffer = try (
+  //       heapRegionAllocator.createBuffer(.{
+  //         .label = "microrasterizer-emit-metadata-staging",
+  //         .offset = 0,
+  //         .length = @sizeOf(u64),
+  //         .usage = (
+  //           mtr.buffer.Usage {
+  //             .transferSrc = true, .transferDst = true, .bufferStorage = true,
+  //           }
+  //         ),
+  //         .queueSharing = .exclusive,
+  //       })
+  //     );
+  //   }
 
-    { // clear to 0
-      try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
-        .queue = queue,
-        .commandBuffer = commandBufferScratch,
-        .bufferDst = resources.microRastEmitMetadataClearingBuffer,
-        .memoryToUpload = &[_] u8 { 0, 0, 0, 0, },
-      });
-    }
-    try mtrCtx.queueFlush(queue);
-  }
+  //   { // clear to 0
+  //     try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
+  //       .queue = queue,
+  //       .commandBuffer = commandBufferScratch,
+  //       .bufferDst = resources.microRastEmitMetadataClearingBuffer,
+  //       .memoryToUpload = &[_] u8 { 0, 0, 0, 0, },
+  //     });
+  //   }
+  //   try mtrCtx.queueFlush(queue);
+  // }
 
-  { // create tiled rasterizer emit triangle IDs buffer
-    var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
-    defer _ = heapRegionAllocator.finish();
+  // { // create tiled rasterizer emit triangle IDs buffer
+  //   var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+  //   defer _ = heapRegionAllocator.finish();
 
-    resources.tiledRastEmitTriangleIDsBuffer = try (
-      heapRegionAllocator.createBuffer(.{
-        .label = "tiled-rasterizer-emit-triangle-IDs",
-        .offset = 0,
-        .length = @sizeOf(u64)*tileWidth*tileHeight*64_000, // ~32 MB
-        .usage = (
-          mtr.buffer.Usage { .bufferStorage = true, }
-        ),
-        .queueSharing = .exclusive,
-      })
-    );
-  }
+  //   resources.tiledRastEmitTriangleIDsBuffer = try (
+  //     heapRegionAllocator.createBuffer(.{
+  //       .label = "tiled-rasterizer-emit-triangle-IDs",
+  //       .offset = 0,
+  //       .length = @sizeOf(u64)*tileWidth*tileHeight*64_000, // ~32 MB
+  //       .usage = (
+  //         mtr.buffer.Usage { .bufferStorage = true, }
+  //       ),
+  //       .queueSharing = .exclusive,
+  //     })
+  //   );
+  // }
 
-  { // create tiled rasterizer dispatch buffer
-    {
-      var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
-      defer _ = heapRegionAllocator.finish();
+  // { // create tiled rasterizer dispatch buffer
+  //   {
+  //     var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+  //     defer _ = heapRegionAllocator.finish();
 
-      resources.tiledRastDispatchBuffer = try (
-        heapRegionAllocator.createBuffer(.{
-          .label = "tiled-rasterizer-dispatch",
-          .offset = 0,
-          .length = @sizeOf(u32)*4*16*16,
-          .usage = mtr.buffer.Usage {
-            .bufferStorage = true,
-            .bufferIndirect = true,
-            .transferDst = true,
-          },
-          .queueSharing = .exclusive,
-        })
-      );
-    }
-  }
+  //     resources.tiledRastDispatchBuffer = try (
+  //       heapRegionAllocator.createBuffer(.{
+  //         .label = "tiled-rasterizer-dispatch",
+  //         .offset = 0,
+  //         .length = @sizeOf(u32)*4*16*16,
+  //         .usage = mtr.buffer.Usage {
+  //           .bufferStorage = true,
+  //           .bufferIndirect = true,
+  //           .transferDst = true,
+  //         },
+  //         .queueSharing = .exclusive,
+  //       })
+  //     );
+  //   }
+  // }
 
-  { // create tiled rasterizer dispatch staging buffer
-    {
-      var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
-      defer _ = heapRegionAllocator.finish();
+  // { // create tiled rasterizer dispatch staging buffer
+  //   {
+  //     var heapRegionAllocator = mtrCtx.createHeapRegionAllocator(.deviceOnly);
+  //     defer _ = heapRegionAllocator.finish();
 
-      resources.tiledRastDispatchClearingBuffer = try (
-        heapRegionAllocator.createBuffer(.{
-          .label = "tiled-rasterizer-dispatch-staging",
-          .offset = 0,
-          .length = @sizeOf(u32)*4*16*16,
-          .usage = mtr.buffer.Usage {
-            .transferDst = true,
-            .transferSrc = true,
-          },
-          .queueSharing = .exclusive,
-        })
-      );
-    }
+  //     resources.tiledRastDispatchClearingBuffer = try (
+  //       heapRegionAllocator.createBuffer(.{
+  //         .label = "tiled-rasterizer-dispatch-staging",
+  //         .offset = 0,
+  //         .length = @sizeOf(u32)*4*16*16,
+  //         .usage = mtr.buffer.Usage {
+  //           .transferDst = true,
+  //           .transferSrc = true,
+  //         },
+  //         .queueSharing = .exclusive,
+  //       })
+  //     );
+  //   }
 
-    { // clear the tiled rasterizer dispatch buffer <X, Y, Tris, Tris>
-      var dispatches : [16*16*4] u32 = undefined;
-      var it : u32 = 0;
-      while (it < 16*16) : (it += 1) {
-        dispatches[it*4+0] = 1; dispatches[it*4+1] = 1;
-        dispatches[it*4+2] = 1; dispatches[it*4+3] = 1;
-      }
+  //   { // clear the tiled rasterizer dispatch buffer <X, Y, Tris, Tris>
+  //     var dispatches : [16*16*4] u32 = undefined;
+  //     var it : u32 = 0;
+  //     while (it < 16*16) : (it += 1) {
+  //       dispatches[it*4+0] = 1; dispatches[it*4+1] = 1;
+  //       dispatches[it*4+2] = 1; dispatches[it*4+3] = 1;
+  //     }
 
-      try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
-        .queue = queue,
-        .commandBuffer = commandBufferScratch,
-        .bufferDst = resources.tiledRastDispatchClearingBuffer,
-        .memoryToUpload = std.mem.sliceAsBytes(dispatches[0..]),
-      });
-    }
-    try mtrCtx.queueFlush(queue);
-  }
+  //     try mtr.util.stageMemoryToBuffer(&mtrCtx, .{
+  //       .queue = queue,
+  //       .commandBuffer = commandBufferScratch,
+  //       .bufferDst = resources.tiledRastDispatchClearingBuffer,
+  //       .memoryToUpload = std.mem.sliceAsBytes(dispatches[0..]),
+  //     });
+  //   }
+  //   try mtrCtx.queueFlush(queue);
+  // }
+
+  try renderer.initializeRendererForModel(
+    "models/cassette/cassette_player_4k.gltf",
+    &mtrCtx,
+    queue,
+    commandPoolScratch,
+    descriptorSetPoolPerFrame,
+    resources,
+  );
+
+    if (true)
+      return;
 
   // -- create pipelines -------------------------------------------------------
   var meshPipeline : BasicPipeline = undefined;

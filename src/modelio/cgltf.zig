@@ -440,10 +440,10 @@ pub const Node = extern struct {
     parent: *Node,
     children: [*]*Node,
     children_count: usize,
-    skin: *Skin,
-    mesh: *Mesh,
-    camera: *Camera,
-    light: *Light,
+    skin: ?*Skin,
+    mesh: ?*Mesh,
+    camera: ?*Camera,
+    light: ?*Light,
     weights: [*]f32,
     weights_count: usize,
     has_translation: bool,
@@ -568,5 +568,5 @@ pub extern fn cgltf_accessor_read_float(accessor: *const Accessor, index: usize,
 pub extern fn cgltf_accessor_read_uint(accessor: *const Accessor, index: usize, out: *u32, element_size: usize) bool;
 pub extern fn cgltf_accessor_read_index(accessor: *const Accessor, index: usize) usize;
 pub extern fn cgltf_num_components(@"type": Type) usize;
-pub extern fn cgltf_accessor_unpack_floats(accessor: *const Accessor, out: [*]f32, float_count: usize) usize;
+pub extern fn cgltf_accessor_unpack_floats(accessor: *const Accessor, out: ?[*]f32, float_count: usize) usize;
 pub extern fn cgltf_copy_extras_json(data: [*c]const Data, extras: [*c]const Extra, dest: [*c]u8, dest_size: [*c]usize) Result;

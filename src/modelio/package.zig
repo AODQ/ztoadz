@@ -8,18 +8,8 @@ pub const cgltf = @import("cgltf.zig");
 //   meshes: []
 // };
 
-pub fn loadScene(
-  path : [*:0] const u8,
-) !* cgltf.Data {
-  var dataPtr : * cgltf.Data = undefined;
-  var option = cgltf.Option {
-    .type = .invalid,
-    .json_token_count = 0,
-    .memory = .{ .alloc = null, .free = null, .user_data = null, },
-    .file = .{ .read = null, .release = null, .user_data = null, },
-  };
-  var retValue = cgltf.cgltf_parse_file(&option, path, &dataPtr);
-  switch (retValue) {
+fn parseCgltfError(result : cgltf.Result) !void {
+  switch (result) {
     .data_too_short => return error.data_too_short,
     .unknown_format => return error.unknown_format,
     .invalid_json => return error.invalid_json,
@@ -31,6 +21,20 @@ pub fn loadScene(
     .legacy_gltf => return error.legacy_gltf,
     else => {},
   }
+}
+
+pub fn loadScene(
+  path : [*:0] const u8,
+) !* cgltf.Data {
+  var dataPtr : * cgltf.Data = undefined;
+  var option = cgltf.Option {
+    .type = .invalid,
+    .json_token_count = 0,
+    .memory = .{ .alloc = null, .free = null, .user_data = null, },
+    .file = .{ .read = null, .release = null, .user_data = null, },
+  };
+  try parseCgltfError(cgltf.cgltf_parse_file(&option, path, &dataPtr));
+  try parseCgltfError(cgltf.cgltf_load_buffers(&option, dataPtr, path));
 
   return dataPtr;
 }
