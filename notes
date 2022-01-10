@@ -1,0 +1,56 @@
+================================================================================
+== ATTRIBUTE ASSEMBLY ==========================================================
+
+when loading models from GLTF, the attributes can be assembled into buffers
+  easily as so:
+
+   ┌───────┐
+   │INDICES│
+   └──┌─┐──┘             ┌───────────────┐
+      │5│───┬────┐       └┐ORIGIN OFFSET┌┘
+      ├─┤   │    │        │ + STRIDES   │    ┌──────────────────────┐
+      │3│───┤    │        └──┬────────┬─┘    │ORIGIN/UV COORD BUFFER│
+      ├─┤┌──┘    ├─────────► │ACCESSOR│[2]   └────┌─────────┐───────┘
+      │2│┘       │           └┌─    ─┐┘           │<0.2,0.5>│
+      └─┘        │            │BUFFER│[3]         │<0.1,0.2>│
+                 │            └──────┘            │<0.5,0.7>│ ◄─┐
+                 │               │                │<0.2,0.8>│ ◄─┤
+                 │               └──────────┐     │<0.8,0.5>│   │
+   ┌─────────────┤                          │     │<0.1,0.2>│ ◄─┤
+   │             │                          │     │<2, 3, 4>│   │
+   │             │         ┌───────────┐    ├────►│<2, 3, 4>│   │
+   │             │         │UV OFFSET +│    ├────►│<2, 3, 4>│   │
+   │             │         │ + STRIDES │    │     │<2, 3, 4>│   │
+   │             │         └─┬────────┬┘    └────►│<2, 3, 4>│   │
+   │             └─────────► │ACCESSOR│[0]        └─────────┘   │
+   │                         └┌─    ─┐┘  ┌──────────────────────┘
+   │   ┌─────────────┐        │BUFFER│[0]│
+   │   │NORMAL OFFSET│        └──────┘   │ ┌─────────────┐
+   │   │ + STRIDES   │           │       │ │NORMAL BUFFER│
+   │   └──┬────────┬─┘           └───────┘ └─┌─────────┐─┘
+   └────► │ACCESSOR│[0]                      │<2, 3, 4>│
+          └┌─    ─┐┘                         │<2, 3, 4>│
+           │BUFFER│[0]           ┌──────────►│<2, 3, 4>│
+           └──────┘              ├───────── ►│<2, 3, 4>│
+              └──────────────────┤           │<2, 3, 4>│
+                                 └──────────►│<2, 3, 4>│
+                                             └─────────┘
+
+
+As can be seen, there are lots of potential configurations that the data can be
+  laid out in the asset model. Multiple attributes can be any set of buffers
+  with their own offsets, their own strides, etc. Given that artists aren't
+  really thinking about the layout of their data, it doesn't make much sense
+  to rely on it. Not to mention we might perform faster under a specific
+  configuration of layout (such as interweaved vertices)
+
+Something that is important to know about how our renderer works is that the
+  origin fetch speeds will remain dominant in the visibility buffer, as the
+  only attribute information necessary at that point. In the material processes,
+  all the attributes will be fetched in a way that will prevent unneccessary
+  overdraws (ei the information we grab will not be discarded)
+
+Thus there are two possible configurations to select between to compare
+  performances.
+
+INDICES

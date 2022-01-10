@@ -35,6 +35,11 @@ pub const RendererInfo = struct {
   postCommandBufferSubmitCallback : ? fn (* mtr.Context) void = null,
 };
 
+// contains information necessary to render the node
+struct NodeRenderable {
+  
+};
+
 // takes a model, modifies MTR to render it, and returns an update
 //   callback + command buffer to render everything
 pub fn initializeRendererForModel(
@@ -63,6 +68,16 @@ pub fn initializeRendererForModel(
   var indicesBuffer = std.ArrayList(u32).init(mtrCtx.primitiveAllocator);
   defer verticesBuffer.deinit();
   defer indicesBuffer.deinit();
+
+  // pointer to offset into the verticesBuffer w.r.t. indices
+  // ei:
+  // mesh |buffer 0| |indices 0 1 2 3 1 2 3 4 5 6| => offset 0
+  // mesh |buffer 1| |indices 0 1 2 3 1 2 3| => offset 7 (prev 6 + 1)
+  // mesh |buffer 2| |indices 0 1 2 3 1 2 3| => offset 11 (prev 7 + 3 + 1)
+  var verticesBufferOffsets = (
+    std.AutoHashMap(usize, usize).init(mtrCtx.primitiveAllocator)
+  );
+  defer verticesBufferOffsets.deinit();
 
   // TODO right now if multiple nodes point to same mesh they get duped
 
@@ -104,6 +119,10 @@ pub fn initializeRendererForModel(
         switch (attribute.type) {
           .position => {
             std.debug.assert(attribute.index == 0);
+            // const bufferPtrHandle = (
+            //   @ptrToInt(attribute.data.buffer_view.buffer)
+            // );
+            // std.log.info("buffer ptr handle: {}", .{bufferPtrHandle});
             const numFloats = (
               modelio.cgltf.cgltf_accessor_unpack_floats(
                 attribute.data, null, 0,
