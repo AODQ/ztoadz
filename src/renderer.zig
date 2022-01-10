@@ -59,8 +59,8 @@ pub fn initializeRendererForModel(
   // want to have everything merged into a single set of buffers
   // thus vertices and indices are going to conform to only one single format
 
-  var verticesBuffer = std.ArrayList(u8).init(mtrCtx.primitiveAllocator);
-  var indicesBuffer = std.ArrayList(u8).init(mtrCtx.primitiveAllocator);
+  var verticesBuffer = std.ArrayList(f32).init(mtrCtx.primitiveAllocator);
+  var indicesBuffer = std.ArrayList(u32).init(mtrCtx.primitiveAllocator);
   defer verticesBuffer.deinit();
   defer indicesBuffer.deinit();
 
@@ -97,28 +97,28 @@ pub fn initializeRendererForModel(
       var indexIt : usize = 0;
       while (indexIt < indices.count) : (indexIt += 1) {
         var idx = modelio.cgltf.cgltf_accessor_read_index(indices, indexIt);
-        try indicesBuffer.appendSlice(
-          @ptrCast([*] u8, &idx)[0 .. @sizeOf(usize)]
-        );
-        // (try indicesBuffer.addOne()).* = idx;
+        (try indicesBuffer.addOne()).* = @intCast(u32, idx);
       }
 
       for (primitive.attributes[0 .. primitive.attributes_count]) |attribute| {
         switch (attribute.type) {
           .position => {
             std.debug.assert(attribute.index == 0);
-            const numVertices = (
+            const numFloats = (
               modelio.cgltf.cgltf_accessor_unpack_floats(
                 attribute.data, null, 0,
               )
             );
-            var bufferArray = try (
-              verticesBuffer.addManyAsArray(numVertices)
+            try verticesBuffer.resize(numFloats * @sizeOf(f32));
+            var verticesBufferSlice = (
+              verticesBuffer.items[
+                verticesBuffer.items.len - (numFloats*@sizeOf(f32)) ..
+              ]
             );
-            modelio.cgltf.cgltf_accessor_unpack_floats(
-              attribute, bufferArray, numVertices,
+            _ = modelio.cgltf.cgltf_accessor_unpack_floats(
+              attribute.data, @ptrCast([*] f32, verticesBufferSlice), numFloats,
             );
-            std.log.info("unpacked {} floats", .{attribute});
+            std.log.info("unpacked {} floats", .{numFloats});
           },
           else => {},
         }
