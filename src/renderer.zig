@@ -29,18 +29,13 @@ pub const BasicResources = struct {
   tiledRastDispatchClearingBuffer : mtr.buffer.Idx,
 };
 
-pub const RendererInfo = struct {
-  commandBuffer : mtr.command.BufferIdx,
-  preCommandBufferSubmitCallback : ? fn (* mtr.Context) void = null,
-  postCommandBufferSubmitCallback : ? fn (* mtr.Context) void = null,
-};
-
 // contains information necessary to render the node
 pub const NodeRenderable = struct {
   indexBuffer : mtr.buffer.Idx,
   originBuffer : mtr.buffer.Idx,
   materialBuffer : mtr.buffer.Idx,
   metadataBuffer : mtr.buffer.Idx,
+  commandBuffer : mtr.command.BufferIdx,
 };
 
 // takes a model, modifies MTR to render it, and returns an update
@@ -53,7 +48,8 @@ pub fn initializeRendererForModel(
   commandBufferScratch : mtr.command.BufferIdx,
   descriptorSetPool : mtr.descriptor.PoolIdx,
   resources : BasicResources,
-) !void {
+  previousCommandBufferTapes : [] mtr.util.FinalizedCommandBufferTapes,
+) !std.ArrayList(NodeRenderable) {
   _ = gtcQueue;
   _ = commandPoolScratch;
   _ = descriptorSetPool;
@@ -73,7 +69,6 @@ pub fn initializeRendererForModel(
   var nodeRenderables = (
     std.ArrayList(NodeRenderable).init(mtrCtx.primitiveAllocator)
   );
-  nodeRenderables.deinit();
 
   for (scene.nodes[0 .. scene.nodes_count]) |node| {
     // TODO translation / scale / matrix
@@ -200,8 +195,25 @@ pub fn initializeRendererForModel(
       });
       try mtrCtx.queueFlush(gtcQueue);
     }
+
+    // command buffer
+    nodeRenderable.commandBuffer = (.{
+        .commandPool = commandPoolScratch,
+        .label = "node",
+        .commandBufferTapes = previousCommandBufferTapes,
+      }
+    );
+
+    {
+      var commandBufferRecorder = (
+        try mtr.util.CommandBufferRecorder.init(.{
+          .ctx = &mtrCtx,
+          .commandBuffer = nodeRenderable.commandBuffer,
+          .imageTapes = 
+        })
+      );
+    }
   }
 
-  {
-  }
+  return nodeRenderables;
 }
