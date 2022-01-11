@@ -53,4 +53,62 @@ Something that is important to know about how our renderer works is that the
 Thus there are two possible configurations to select between to compare
   performances.
 
-INDICES
+   ┌───────┐    ┌─────────────┐
+   │INDICES│    │ORIGIN BUFFER│
+   └──┌─┐──┘    └┌─────────┐──┘
+      │5├┬─┬─┐   │<1, 3, 4>│
+      │3├┤ │ │   │<2, 3, 4>│
+      │2├┘ │ ├──►│<2, 3, 4>│
+      └─┘  │ ├──►│<2, 3, 4>│
+           │ │   │<2, 3, 4>│
+           │ └──►│<2, 3, 4>│
+  ┌────────┘     └─────────┘
+  │
+  │   ┌─────────────┐     ┌────────────────┐
+  │   │ANIMATION    │────►│ANIMATION BUFFER│ [mapped to client]
+  ├─► │STRIDE+OFFSET│     └─┌───────────────┐
+  │   └─────────────┘       │JOINTS, WEIGHTS│
+  │                         └───────────────┘
+  │   ┌───────────┐
+  └─► │ MATERIAL  │        ┌───────────────┐
+      │ STRIDE+OFF│───────►│MATERIAL BUFFER│
+      └───────────┘        └─┌──────────────────────────┐
+                             │NORMAL, UV, TANGENT, COLOR│
+                             └──────────────────────────┘
+
+  [ note that Animation/Material stride/offsets are part of the same buffer ]
+
+  --- OR ---
+
+   ┌───────┐
+   │INDICES│
+   └──┌─┐──┘ ┌───────────────────────────┐   ┌──────────────────────┐
+      │5├┬──►│ORIGIN, NORMAL, ... OFFSETS├──►│ORIGIN+MATERIAL BUFFER│
+      │3├┤   └───────────────────────────┘   └──────────────────────┘
+      │2├┴─┐ ┌───────────────────────┐     ┌────────────────┐
+      └─┘  └►│JOINTS, WEIGHTS OFFSETS├────►│ANIMATION BUFFER│
+             └───────────────────────┘     └────────────────┘
+
+ as well the formats will be converted to:
+
+    INDICES: u32
+    ORIGIN: RGBA 32F (maybe RGB)
+    NORMAL: RGB 32F
+    UV: RG 32F
+    TANGENT: RGB 32F
+    COLOR: RGB 32F
+
+The renderer will use meshlets [todo]
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -651,6 +651,7 @@ pub fn main() !void {
     &mtrCtx,
     queue,
     commandPoolScratch,
+    commandBufferScratch,
     descriptorSetPoolPerFrame,
     resources,
   );
