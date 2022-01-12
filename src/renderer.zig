@@ -36,6 +36,7 @@ pub const NodeRenderable = struct {
   materialBuffer : mtr.buffer.Idx,
   metadataBuffer : mtr.buffer.Idx,
   commandBuffer : mtr.command.BufferIdx,
+  commandBufferTapes : mtr.util.FinalizedCommandBufferTapes,
 };
 
 // takes a model, modifies MTR to render it, and returns an update
@@ -209,8 +210,59 @@ pub fn initializeRendererForModel(
         try mtr.util.CommandBufferRecorder.init(.{
           .ctx = &mtrCtx,
           .commandBuffer = nodeRenderable.commandBuffer,
-          .imageTapes = 
+          .commandBufferTapes = previousCommandBufferTapes,
         })
+      );
+      defer nodeRenderable.commandBufferTapes = (
+        commandBufferRecorder.finishWithFinalizedTapes()
+      );
+
+      try commandBufferRecorder.append(
+        mtr.command.PipelineBarrier {
+          .srcStage = .{ .begin = true },
+          .dstStage = .{ .compute = true },
+          .bufferTapes = (
+            &[_] mtr.command.PipelineBarrier.BufferTapeAction {
+              .{
+                .buffer = nodeRenderable.indexBuffer,
+                .accessFlags = .{ .shaderRead = true },
+              }, .{
+                .buffer = nodeRenderable.originBuffer,
+                .accessFlags = .{ .shaderRead = true },
+              }, .{
+                .buffer = resources.microRastEmitMetadataBuffer,
+                .accessFlags = .{ .shaderWrite = true, .shaderRead = true, },
+              }, .{
+                .buffer = resources.microRastEmitTriangleIDsBuffer,
+                .accessFlags = .{ .shaderWrite = true },
+              }, .{
+                .buffer = resources.intermediaryAttributeAssemblyBuffer,
+                .accessFlags = .{ .shaderWrite = true },
+              }, .{
+                .buffer = resources.tiledRastEmitTriangleIDsBuffer,
+                .accessFlags = .{ .shaderWrite = true, },
+              }, .{
+                .buffer = resources.tiledRastDispatchBuffer,
+                .accessFlags = .{ .shaderRead = true, .shaderWrite = true, },
+              },
+            }
+          ),
+        }
+      );
+
+      try commandBufferRecorder.append(
+        mtr.command.BindPipeline {
+          .pipeline = meshPipeline.pipeline,
+        }
+      );
+      // TODO Have to create proper descriptor sets as well
+
+      try commandBufferRecorder.append(
+        mtr.command.BindDescriptorSets {
+          .pipelineLayout = meshPipeline.pipelineLayout,
+          .descriptorSets = (
+          ),
+        }
       );
     }
   }
